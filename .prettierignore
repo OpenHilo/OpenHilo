@@ -1,0 +1,4 @@
+# Pinned upstream originals: SHA-256 verified, not local formatting targets.
+tests/upstream/test262/
+tests/upstream/v8/
+tests/upstream/quickjs/

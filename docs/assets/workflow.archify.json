@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenHilo \u00b7 AI, code, and humans. One workflow.",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/assets/workflow-preview.html",
+    "repository": {
+      "url": "https://github.com/eric2610abc/OpenHilo.git",
+      "revision": "ce92d87cdebad35a397a8d9cece312dae11e7466"
+    },
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Human task"
+        },
+        "backend": {
+          "label": "AI task"
+        },
+        "messagebus": {
+          "label": "Code task"
+        },
+        "external": {
+          "label": "Flow / result"
+        }
+      }
+    },
+    "subtitle": "Ordinary calls. Typed results."
+  },
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Human input can wait",
+      "items": [
+        "No answer keeps the Human task pending.",
+        "Resume from its saved checkpoint in a new process."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Your TypeScript controls the work",
+      "items": [
+        "This is the review-report example, not a fixed executor order.",
+        "Use function calls, if branches and bounded loops."
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "write",
+      "type": "backend",
+      "label": "draft_report_by_ai",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 24,
+          "end_line": 25
+        }
+      ],
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        190,
+        74
+      ]
+    },
+    {
+      "id": "review",
+      "type": "frontend",
+      "label": "review_report_by_human",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 26,
+          "end_line": 26
+        },
+        {
+          "path": "examples/review-report/README.md",
+          "line": 52,
+          "end_line": 72
+        }
+      ],
+      "icon": "person",
+      "pos": [
+        270,
+        40
+      ],
+      "size": [
+        190,
+        74
+      ]
+    },
+    {
+      "id": "choice",
+      "type": "external",
+      "label": "if approved",
+      "sublabel": "boolean result",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 27,
+          "end_line": 27
+        }
+      ],
+      "icon": "decision",
+      "pos": [
+        500,
+        40
+      ],
+      "size": [
+        150,
+        74
+      ]
+    },
+    {
+      "id": "save",
+      "type": "messagebus",
+      "label": "save_report_by_code",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 28,
+          "end_line": 37
+        }
+      ],
+      "pos": [
+        700,
+        40
+      ],
+      "size": [
+        190,
+        74
+      ]
+    },
+    {
+      "id": "result",
+      "type": "external",
+      "label": "Result",
+      "sublabel": "saved + reason",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 33,
+          "end_line": 38
+        }
+      ],
+      "icon": "success",
+      "pos": [
+        930,
+        40
+      ],
+      "size": [
+        150,
+        74
+      ]
+    },
+    {
+      "id": "again",
+      "type": "external",
+      "label": "Next round?",
+      "sublabel": "previous + feedback",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 24,
+          "end_line": 24
+        }
+      ],
+      "icon": "decision",
+      "pos": [
+        500,
+        230
+      ],
+      "size": [
+        150,
+        74
+      ]
+    },
+    {
+      "id": "limit",
+      "type": "external",
+      "label": "Stop",
+      "sublabel": "3 rounds \u00b7 nothing saved",
+      "sources": [
+        {
+          "path": "examples/review-report/workflow.ts",
+          "line": 40,
+          "end_line": 43
+        }
+      ],
+      "icon": "stop",
+      "pos": [
+        930,
+        230
+      ],
+      "size": [
+        150,
+        74
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "write",
+      "to": "review"
+    },
+    {
+      "from": "review",
+      "to": "choice"
+    },
+    {
+      "from": "choice",
+      "to": "save",
+      "label": "true",
+      "variant": "emphasis"
+    },
+    {
+      "from": "save",
+      "to": "result"
+    },
+    {
+      "from": "choice",
+      "to": "again",
+      "label": "false"
+    },
+    {
+      "from": "again",
+      "to": "write",
+      "label": "round < 3",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "from": "again",
+      "to": "limit",
+      "label": "limit reached"
+    }
+  ]
+}

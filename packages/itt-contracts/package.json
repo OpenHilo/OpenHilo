@@ -1,0 +1,70 @@
+{
+  "name": "@openhilo/itt-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public ITT v2 graph and value contracts",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./human-output": {
+      "types": "./dist/human-output.d.ts",
+      "import": "./dist/human-output.mjs",
+      "require": "./dist/human-output.js",
+      "default": "./dist/human-output.mjs"
+    },
+    "./run-inputs": {
+      "types": "./dist/run-inputs.d.ts",
+      "import": "./dist/run-inputs.mjs",
+      "require": "./dist/run-inputs.js",
+      "default": "./dist/run-inputs.mjs"
+    },
+    "./ai-selection": {
+      "types": "./dist/ai-selection.d.ts",
+      "import": "./dist/ai-selection.mjs",
+      "require": "./dist/ai-selection.js",
+      "default": "./dist/ai-selection.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json && node scripts/finalize-esm.cjs",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {},
+  "typesVersions": {
+    "*": {
+      "human-output": [
+        "dist/human-output.d.ts"
+      ],
+      "run-inputs": [
+        "dist/run-inputs.d.ts"
+      ],
+      "ai-selection": [
+        "dist/ai-selection.d.ts"
+      ]
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "packages/itt-contracts"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/itt-contracts#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

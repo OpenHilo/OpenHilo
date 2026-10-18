@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const {execFileSync}=require('node:child_process');
+const {TerminalHumanExecutor}=require('@openhilo/human-terminal');
+const packageDir=path.resolve(path.dirname(require.resolve('@openhilo/runtime')),'..');
+for(const file of ['suspend-resume.cjs','human-adapter.cjs'])execFileSync(process.execPath,[path.join(packageDir,'examples',file)],{stdio:'inherit'});
+(async()=>{const answers=['2'];let submitted;
+ const human=new TerminalHumanExecutor({promptFn:async()=>answers.shift(),write:()=>{}});
+ await human.present({version:1,taskId:'consumer-human',runId:'consumer',nodeId:'review',createdAt:new Date().toISOString(),nodeRunId:'n1',prompt:'Approve?',inputs:{},outputs:{approved:'boolean'}},{signal:new AbortController().signal,submit:async value=>{submitted=value;return {status:'accepted',taskId:value.taskId,submissionId:value.submissionId};}});
+ assert.equal(Object.hasOwn(submitted,'decision'),false);assert.deepEqual(submitted.outputs,{approved:'false'});
+})().catch(e=>{console.error(e);process.exitCode=1;});

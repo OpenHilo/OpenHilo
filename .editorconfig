@@ -1,0 +1,6 @@
+# Preserve vendored upstream bytes, including whitespace and final newlines.
+# No formatting style is imposed on OpenHilo's own source.
+[tests/upstream/{test262,v8,quickjs}/**]
+ij_formatter_enabled = false
+trim_trailing_whitespace = false
+insert_final_newline = false

@@ -1,0 +1,12 @@
+{
+  "files": {
+    "main.ts": "import { left as l, right as r } from './numbers';\nexport async function main(): Promise<{ result: number }> {\n  const { value: a } = await l();\n  const { value: b } = await r();\n  return { result: a + b };\n}",
+    "numbers.ts": "export async function left(): Promise<{ value: number }> { return { value: 1 }; }\nexport async function right(): Promise<{ value: number }> { return { value: 2 }; }"
+  },
+  "entries": [
+    {
+      "file": "main.ts",
+      "exportName": "main"
+    }
+  ]
+}

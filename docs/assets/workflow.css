@@ -1,0 +1,3 @@
+/* Keep Archify's original light palette; playback never highlights nodes. */
+.subtitle {font-size:20px;font-weight:650;color:var(--text);line-height:1.5;margin-top:14px;}
+.demo-path {display:block;font-size:12px;font-weight:400;color:var(--text-muted);margin-top:5px;}

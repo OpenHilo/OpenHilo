@@ -1,0 +1,52 @@
+const {test, after} = require('node:test');
+const assert = require('node:assert/strict');
+const forbidden = () => {
+    throw new Error('Live operations forbidden');
+};
+for (const name of ['node:http', 'node:https']) {
+    require(name).request = forbidden;
+    require(name).get = forbidden;
+}
+require('node:net').connect = forbidden;
+require('node:net').createConnection = forbidden;
+require('node:tls').connect = forbidden;
+for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) require('node:child_process')[name] = forbidden;
+const initialFetch = global.fetch;
+after(() => {
+    global.fetch = initialFetch;
+});
+const {LegacyJsonCompletionExecutor} = require('@openhilo/ai-sdk/legacy-json-executor');
+
+test('legacy JSON completion works through the independent SDK export with offline transport', async () => {
+    let calls = 0;
+    global.fetch = async (_url, init) => {
+        calls++;
+        const body = JSON.parse(init.body);
+        assert.equal(body.model, 'offline');
+        assert.match(body.messages[1].content, /catalogue/);
+        return new Response(JSON.stringify({
+            id: 'fixture',
+            choices: [{message: {role: 'assistant', content: '["example:edit"]'}}]
+        }), {status: 200, headers: {'content-type': 'application/json'}});
+    };
+    const executor = new LegacyJsonCompletionExecutor({
+        base_url: 'http://offline.invalid/v1',
+        api_key: 'fake',
+        model: 'offline'
+    });
+    assert.equal(executor.id, 'openhilo.legacy-json-completion');
+    const execution = await executor.start({
+            version: 1,
+            taskId: 'skills',
+            instruction: 'Select from catalogue',
+            inputs: {},
+            output: {skills: 'json'},
+            requiredCapabilities: ['structured_output']
+        },
+        {
+            attemptId: 'attempt', signal: new AbortController().signal, onEvent() {
+            }
+        });
+    assert.deepEqual((await execution.result).outputs, {skills: ['example:edit']});
+    assert.equal(calls, 1);
+});

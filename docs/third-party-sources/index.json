@@ -1,0 +1,10 @@
+{
+  "standardwebhooks@1.1.1": [
+    {
+      "file": "standard-libraries-LICENSE",
+      "url": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/b4d2c14fc5b4ccff3ff271e3b087dff812254c59/libraries/LICENSE",
+      "sha256": "5ec8c7b26b64d881a6706617bed25c049f97f2f35de034c756de8546fd6dbe27",
+      "note": "MIT license for the libraries, from the package release gitHead b4d2c14fc5b4ccff3ff271e3b087dff812254c59. The repository root license applies to its specification and is not substituted here."
+    }
+  ]
+}

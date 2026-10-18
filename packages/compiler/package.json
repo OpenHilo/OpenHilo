@@ -1,0 +1,100 @@
+{
+  "name": "@openhilo/compiler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure workflow DSL validation and CFG compilation",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./ast-to-itt": {
+      "types": "./dist/ast-to-itt.d.ts",
+      "require": "./dist/ast-to-itt.js",
+      "default": "./dist/ast-to-itt.js"
+    },
+    "./ts-validator": {
+      "types": "./dist/ts-validator.d.ts",
+      "require": "./dist/ts-validator.js",
+      "default": "./dist/ts-validator.js"
+    },
+    "./multi-intent-compiler": {
+      "types": "./dist/multi-intent-compiler.d.ts",
+      "require": "./dist/multi-intent-compiler.js",
+      "default": "./dist/multi-intent-compiler.js"
+    },
+    "./import-resolver": {
+      "types": "./dist/import-resolver.d.ts",
+      "require": "./dist/import-resolver.js",
+      "default": "./dist/import-resolver.js"
+    },
+    "./node-id-gen": {
+      "types": "./dist/node-id-gen.d.ts",
+      "require": "./dist/node-id-gen.js",
+      "default": "./dist/node-id-gen.js"
+    },
+    "./source-skills": {
+      "types": "./dist/source-skills.d.ts",
+      "require": "./dist/source-skills.js",
+      "default": "./dist/source-skills.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LANGUAGE.md",
+    "LANGUAGE.zh-CN.md",
+    "examples",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@openhilo/itt-contracts": "0.1.0",
+    "typescript": "5.9.3"
+  },
+  "typesVersions": {
+    "*": {
+      "ast-to-itt": [
+        "dist/ast-to-itt.d.ts"
+      ],
+      "ts-validator": [
+        "dist/ts-validator.d.ts"
+      ],
+      "multi-intent-compiler": [
+        "dist/multi-intent-compiler.d.ts"
+      ],
+      "import-resolver": [
+        "dist/import-resolver.d.ts"
+      ],
+      "node-id-gen": [
+        "dist/node-id-gen.d.ts"
+      ],
+      "source-skills": [
+        "dist/source-skills.d.ts"
+      ]
+    }
+  },
+  "bin": {
+    "openhilo-compile": "dist/cli.js"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "packages/compiler"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/compiler#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

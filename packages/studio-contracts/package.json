@@ -1,0 +1,55 @@
+{
+  "name": "@openhilo/studio-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JSON application presentation contracts for the generic OpenHilo Studio",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./ai-config": {
+      "types": "./dist/ai-config.d.ts",
+      "import": "./dist/esm/ai-config.js",
+      "require": "./dist/ai-config.js",
+      "default": "./dist/esm/ai-config.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json && node scripts/finalize-esm.cjs",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "typesVersions": {
+    "*": {
+      "ai-config": [
+        "dist/ai-config.d.ts"
+      ]
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "packages/studio-contracts"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/studio-contracts#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  },
+  "dependencies": {
+    "@openhilo/itt-contracts": "0.1.0"
+  }
+}

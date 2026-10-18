@@ -1,0 +1,55 @@
+{
+  "name": "@openhilo/code-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Explicit local Bash and Python execution preserving the ITT code ABI",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "require": "./dist/types.js",
+      "default": "./dist/types.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "types": [
+        "dist/types.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.cjs",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@openhilo/itt-contracts": "0.1.0",
+    "@openhilo/runtime-contracts": "0.1.0",
+    "@openhilo/runtime": "0.1.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "adapters/code-local"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/adapters/code-local#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

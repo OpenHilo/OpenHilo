@@ -1,0 +1,9 @@
+THIRD-PARTY NOTICES — @openhilo/runtime
+
+Generated from the standalone package-lock.json by scripts/third-party-notices.cjs.
+Preserve these notices when redistributing. Each component retains its own license;
+OpenHilo's MIT license does not relicense it. This conservative runtime dependency
+inventory is not a claim that every listed file is bundled. Optional peers absent
+from the lock are recorded in docs/third-party-inventory.json, not installed.
+
+No external runtime dependencies in this package closure.

@@ -1,0 +1,56 @@
+{
+  "name": "@openhilo/ai-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared AI task loop with OpenAI and Anthropic SDK model adapters",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./legacy-json-executor": {
+      "types": "./dist/legacy-json-executor.d.ts",
+      "require": "./dist/legacy-json-executor.js",
+      "default": "./dist/legacy-json-executor.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@openhilo/ai-contracts": "0.1.0",
+    "@openhilo/tool-host": "0.1.0",
+    "openai": "6.32.0",
+    "@anthropic-ai/sdk": "0.128.0"
+  },
+  "typesVersions": {
+    "*": {
+      "legacy-json-executor": [
+        "dist/legacy-json-executor.d.ts"
+      ]
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "adapters/ai-sdk"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/adapters/ai-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

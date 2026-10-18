@@ -1,0 +1,27 @@
+{
+  "adapter": "routed",
+  "routes": {
+    "default": {
+      "defaultLevel": "medium",
+      "levels": {
+        "medium": {
+          "adapter": "codex",
+          "effort": "low",
+          "sandbox": "read-only",
+          "timeout_ms": 120000
+        }
+      }
+    },
+    "coding": {
+      "defaultLevel": "pro",
+      "levels": {
+        "pro": {
+          "adapter": "codex",
+          "effort": "medium",
+          "sandbox": "read-only",
+          "timeout_ms": 120000
+        }
+      }
+    }
+  }
+}

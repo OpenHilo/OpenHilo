@@ -1,0 +1,12 @@
+[
+  {
+    "id": "garden",
+    "title": "Garden plan",
+    "description": "Plant herbs and collect rainwater."
+  },
+  {
+    "id": "library",
+    "title": "Library corner",
+    "description": "Collect donated books and host a weekly reading group."
+  }
+]

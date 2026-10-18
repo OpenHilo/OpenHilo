@@ -1,0 +1,703 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "test262": {
+      "repository": "https://github.com/tc39/test262",
+      "commit": "d53ebc8b1931d9f1541e43d59650776e4b766248",
+      "licenseFile": "test262/LICENSE"
+    },
+    "v8": {
+      "repository": "https://github.com/v8/v8",
+      "commit": "e40edba53922265379aaebe0a17da25f963d2010",
+      "licenseFile": "v8/LICENSE"
+    },
+    "quickjs": {
+      "repository": "https://github.com/bellard/quickjs",
+      "commit": "84e723f1ace5e3823cef8149dd0f890fe74b77ce",
+      "licenseFile": "quickjs/LICENSE"
+    }
+  },
+  "cases": [
+    {
+      "id": "continue-shadow",
+      "source": "test262",
+      "path": "test/language/statements/continue/shadowing-loop-variable-in-same-scope-as-continue.js",
+      "sha256": "cead949df02527227520857ce5f9dcade6f7cf372bfeb53d47a0ed274ee0874f",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "var count -> let; assertion becomes returned value; checkpoint before continue.",
+      "body": "let count=0;for(let x=0;x<10;){x++;count++;{let x='hello'; /*checkpoint*/ continue;}}return {value:count};",
+      "expected": 10
+    },
+    {
+      "id": "falsy-branches",
+      "source": "test262",
+      "path": "test/language/statements/if/S12.5_A1.1_T1.js",
+      "sha256": "a6a2a4a5dd754230c43491b12022c4e8f7bb8ca505813126f6c74f532439ac04",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Only JSON-compatible 0/false/null/empty-string branches; throw-on-wrong-branch becomes failures counter. undefined/NaN conditions excluded, not claimed passed.",
+      "body": "let failures=0;if(0)failures++;if(false)failures++;/*checkpoint*/ if(null)failures++;if('')failures++;return {value:failures};",
+      "expected": 0
+    },
+    {
+      "id": "for-of-single-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Initialize observation variable to JSON number; omit typeof out-of-scope x (separate lexical rejection coverage).",
+      "body": "let value=0;for(let [x] of [[34]]){/*checkpoint*/ value=x;}return {value};",
+      "expected": 34
+    },
+    {
+      "id": "for-of-json-array",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array.js",
+      "sha256": "79a771f2739e8f33b488bffafe21c93c8ea5c5fc35e2a1077e3b7f4eca921160",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "JSON-compatible prefix only; sparse/undefined/NaN excluded and separately rejected; assertions become output sequence; var -> const/let.",
+      "body": "const array=[0,'a',true,false,null];let values=[];for(const value of array){/*checkpoint*/ values.push(value);}return {value:values};",
+      "expected": [
+        0,
+        "a",
+        true,
+        false,
+        null
+      ]
+    },
+    {
+      "id": "for-of-array-expand",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array-expand.js",
+      "sha256": "80e8eaf8af54d92f4ecadc923eec420f3335541a56a8fef6589c16feb89b2719",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Return iteration count, retain mutations and pause inside the loop; require native live-array iteration.",
+      "body": "let array=[0];let iterationCount=0;let first=0;let second=1;for(const x of array){first=second;second=null;if(first!==null){array.push(1);}/*checkpoint*/ iterationCount+=1;}return {value:iterationCount};",
+      "expected": 2,
+      "referenceStateNote": "Former JSON-copy difference resolved by the unified reference state contract."
+    },
+    {
+      "id": "for-of-array-contract",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array-contract.js",
+      "sha256": "de06ee4e4896f278e73ff3dc33a23a05694351e48e2d20d081c284afb19cd071",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Return iteration count with a pause after pop; require native live-array iteration.",
+      "body": "let array=[0,1];let iterationCount=0;for(const x of array){array.pop();/*checkpoint*/ iterationCount+=1;}return {value:iterationCount};",
+      "expected": 1,
+      "referenceStateNote": "Former JSON-copy difference resolved by the unified reference state contract."
+    },
+    {
+      "id": "block-var-hoisting",
+      "source": "test262",
+      "path": "test/language/statements/block/scope-var-none.js",
+      "sha256": "9685ac47f8b17c7562cf01e8470da3bdb11ca0021d1864fb5eb2d908e62ce95c",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Remove persisted closures and retain direct variable scope check; native yields inside.",
+      "body": "var x='outside';{var x='inside';}return {value:x};",
+      "expected": null,
+      "reason": "Function-scoped var is outside workflow let/const subset; must not silently behave as block-scoped.",
+      "diagnostic": "var"
+    },
+    {
+      "id": "let-tdz",
+      "source": "test262",
+      "path": "test/language/statements/let/block-local-use-before-initialization-in-declaration-statement.js",
+      "sha256": "59107e6adac568c0c24bcf2606b561c5137b73da67b9fb31e5ee3c78ae807347",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Unwrap assert.throws body; error phase intentionally differs.",
+      "body": "{let x=x+1;}return {value:0};",
+      "expected": null,
+      "reason": "TDZ diagnosed before execution instead of runtime ReferenceError.",
+      "diagnostic": "before|initializ"
+    },
+    {
+      "id": "const-tdz",
+      "source": "test262",
+      "path": "test/language/statements/const/block-local-use-before-initialization-in-declaration-statement.js",
+      "sha256": "512f34b3f15414a32b7a69755e7b2793d70960b9ad23002ff7bcbbc2ed0db5fd",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Unwrap assert.throws body; error phase intentionally differs.",
+      "body": "{const x=x+1;}return {value:0};",
+      "expected": null,
+      "reason": "TDZ diagnosed before execution instead of runtime ReferenceError.",
+      "diagnostic": "before|initializ"
+    },
+    {
+      "id": "for-head-destructuring",
+      "source": "test262",
+      "path": "test/language/statements/for/head-let-destructuring.js",
+      "sha256": "b9e7746c01683828e7fdd59f7d9706f733ba434d9041ea653bb1ca0f5dd73d42",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Retain destructured for initializer and value; initialize observation variable to 0; pause before break. Require native equivalence under common-pattern support.",
+      "body": "let value=0;for(let [x]=[23];;){value=x;/*checkpoint*/break;}return {value};",
+      "expected": 23
+    },
+    {
+      "id": "for-head-redeclaration",
+      "source": "test262",
+      "path": "test/language/statements/for/head-let-bound-names-in-stmt.js",
+      "sha256": "daf36296d28111f54b01ddb72fae30c903ff0b2df1bb63a01ed4cc7efc59c3fd",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Remove $DONOTEVALUATE and give loop initializer a value.",
+      "body": "for(let x=0;false;){var x;}return {value:0};",
+      "expected": null,
+      "diagnostic": "declar|var",
+      "reason": "Conflicting lexical/var declarations must be rejected."
+    },
+    {
+      "id": "logical-or",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-or-assignment-operator.js",
+      "sha256": "d77746c5562967ea73b950e21359f0bb0839ff484f7eb55d12cc04e043f8ad01",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "JSON primitive representative from upstream table; embedded assignment result split into standalone assignment and returned observation.",
+      "body": "let value=false;value ||= 1;/*checkpoint*/ return {value};",
+      "expected": 1
+    },
+    {
+      "id": "logical-or-short-circuit",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-or-assignment-operator.js",
+      "sha256": "d77746c5562967ea73b950e21359f0bb0839ff484f7eb55d12cc04e043f8ad01",
+      "section": "short-circuit rule and primitive value table",
+      "kind": "equivalent",
+      "adaptation": "Derived short-circuit sentinel: RHS throws if evaluated; no upstream assertion expectation changed.",
+      "body": "let value=2;value ||= JSON.parse(\"invalid\");/*checkpoint*/ return {value};",
+      "expected": 2
+    },
+    {
+      "id": "logical-and",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-and-assignment-operator.js",
+      "sha256": "16d6f54b4ae2cb636dff5e5c6557d76d5f68428c8c2b2e51c773412afaddc02f",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "JSON primitive representative from upstream table; embedded assignment result split into standalone assignment and returned observation.",
+      "body": "let value=true;value &&= 1;/*checkpoint*/ return {value};",
+      "expected": 1
+    },
+    {
+      "id": "logical-and-short-circuit",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-and-assignment-operator.js",
+      "sha256": "16d6f54b4ae2cb636dff5e5c6557d76d5f68428c8c2b2e51c773412afaddc02f",
+      "section": "short-circuit rule and primitive value table",
+      "kind": "equivalent",
+      "adaptation": "Derived short-circuit sentinel: RHS throws if evaluated; no upstream assertion expectation changed.",
+      "body": "let value=false;value &&= JSON.parse(\"invalid\");/*checkpoint*/ return {value};",
+      "expected": false
+    },
+    {
+      "id": "logical-nullish",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-nullish-assignment-operator.js",
+      "sha256": "a75ca7efb0a81895c9823c391c98921fef3b5e381ff887bcae11fa34910071af",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "JSON primitive representative from upstream table; embedded assignment result split into standalone assignment and returned observation.",
+      "body": "let value=null;value ??= 1;/*checkpoint*/ return {value};",
+      "expected": 1
+    },
+    {
+      "id": "logical-nullish-short-circuit",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-nullish-assignment-operator.js",
+      "sha256": "a75ca7efb0a81895c9823c391c98921fef3b5e381ff887bcae11fa34910071af",
+      "section": "short-circuit rule and primitive value table",
+      "kind": "equivalent",
+      "adaptation": "Derived short-circuit sentinel: RHS throws if evaluated; no upstream assertion expectation changed.",
+      "body": "let value=2;value ??= JSON.parse(\"invalid\");/*checkpoint*/ return {value};",
+      "expected": 2
+    },
+    {
+      "id": "v8-for-shadow",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-for.js",
+      "sha256": "538dcb65b8590c0b61087e7e0d0b628825d583a8ea65585546363c34fbd11918",
+      "section": "outer_i / outer_s loop",
+      "kind": "equivalent",
+      "adaptation": "Keep lexical shadow and character loop; reduce bound; omit object property assignments and props(for-in) helper outside supported subset.",
+      "body": "let a=[];let i='outer_i';let s='outer_s';for(let i=0x20;i<0x26;i+=2){let s='char:'+String.fromCharCode(i);a.push(s);/*checkpoint*/}return {value:[i,s,a]};",
+      "expected": [
+        "outer_i",
+        "outer_s",
+        [
+          "char: ",
+          "char:\"",
+          "char:$"
+        ]
+      ]
+    },
+    {
+      "id": "v8-for-multi-step",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-for.js",
+      "sha256": "538dcb65b8590c0b61087e7e0d0b628825d583a8ea65585546363c34fbd11918",
+      "section": "closures2",
+      "kind": "equivalent",
+      "adaptation": "Capture immediate values instead of persisting functions. Tests multi-declaration/multi-step loop only, NOT closure conformance.",
+      "body": "let a=[];let b=[];for(let i=0,j=10;i<5;++i,++j){a.push(i);b.push(j);/*checkpoint*/}return {value:[a,b]};",
+      "expected": [
+        [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          10,
+          11,
+          12,
+          13,
+          14
+        ]
+      ]
+    },
+    {
+      "id": "v8-continue-scope",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-leave.js",
+      "sha256": "470951bce70898e5679f24eab4d117ab2b08f38fffc2537d80219ebf04c51b72",
+      "section": "IIFE with x='inner'+i and continue",
+      "kind": "equivalent",
+      "adaptation": "Replace parameter with outer let, var iterator with let, eval(x) assertion with returned x.",
+      "body": "let x='outer';for(let i=0;i<10;++i){let x='inner'+i;/*checkpoint*/ continue;}return {value:x};",
+      "expected": "outer"
+    },
+    {
+      "id": "v8-const-assign",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-const-assign.js",
+      "sha256": "e5aca56432a0b87e23818015f42287208427b19f30c9ea59d74a7cc9e1fd13f8",
+      "section": "decls const c=1 and assignment/update uses",
+      "kind": "reject",
+      "adaptation": "Select direct const binding case from upstream generated combinations.",
+      "body": "const c=1;c=2;return {value:c};",
+      "expected": null,
+      "diagnostic": "constant|assign",
+      "reason": "Immutable bindings diagnosed at compile time rather than native TypeError."
+    },
+    {
+      "id": "v8-const-increment",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-const-assign.js",
+      "sha256": "e5aca56432a0b87e23818015f42287208427b19f30c9ea59d74a7cc9e1fd13f8",
+      "section": "decls const c=1 and assignment/update uses",
+      "kind": "reject",
+      "adaptation": "Select direct const binding case from upstream generated combinations.",
+      "body": "const c=1;c++;return {value:c};",
+      "expected": null,
+      "diagnostic": "constant|assign",
+      "reason": "Immutable bindings diagnosed at compile time rather than native TypeError."
+    },
+    {
+      "id": "v8-const-decrement",
+      "source": "v8",
+      "path": "test/mjsunit/es6/block-const-assign.js",
+      "sha256": "e5aca56432a0b87e23818015f42287208427b19f30c9ea59d74a7cc9e1fd13f8",
+      "section": "decls const c=1 and assignment/update uses",
+      "kind": "reject",
+      "adaptation": "Select direct const binding case from upstream generated combinations.",
+      "body": "const c=1;c--;return {value:c};",
+      "expected": null,
+      "diagnostic": "constant|assign",
+      "reason": "Immutable bindings diagnosed at compile time rather than native TypeError."
+    },
+    {
+      "id": "quickjs-while",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_while",
+      "kind": "equivalent",
+      "adaptation": "Initialize let variables at declaration; replace final assertion with returned count.",
+      "body": "let i=0;let c=0;while(i<3){c++;i++;/*checkpoint*/}return {value:c};",
+      "expected": 3
+    },
+    {
+      "id": "quickjs-while-break",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_while_break",
+      "kind": "equivalent",
+      "adaptation": "Initialize let variables; output both asserted values.",
+      "body": "let i=0;let c=0;while(i<3){c++;/*checkpoint*/ if(i==1)break;i++;}return {value:[c,i]};",
+      "expected": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "quickjs-for-existing-binding",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_for first loop",
+      "kind": "equivalent",
+      "adaptation": "Only first loop (existing binding); second var-hoisting loop excluded; initialize let variables.",
+      "body": "let i=0;let c=0;for(i=0;i<3;i++){c++;/*checkpoint*/}return {value:[c,i]};",
+      "expected": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "quickjs-do-while",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_do_while",
+      "kind": "reject",
+      "adaptation": "Replace var declarations and assertion with observations; do/while retained.",
+      "body": "let i=0;let c=0;do{c++;i++;}while(i<3);return {value:[c,i]};",
+      "expected": null,
+      "diagnostic": "unsupported|DoStatement",
+      "reason": "do/while not supported by workflow CFG."
+    },
+    {
+      "id": "quickjs-for-in",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_for_in first loop",
+      "kind": "reject",
+      "adaptation": "Select first plain-object enumeration only; no prototypes.",
+      "body": "let tab=[];for(let i in {x:1,y:2}){tab.push(i);}return {value:tab};",
+      "expected": null,
+      "diagnostic": "unsupported|ForInStatement",
+      "reason": "for/in not supported by workflow CFG."
+    },
+    {
+      "id": "quickjs-labelled-break",
+      "source": "quickjs",
+      "path": "tests/test_loop.js",
+      "sha256": "db9c2a72a6cfdec43c5f7eac40704d014862fe47443c29d6c1b10c8ecd2f4265",
+      "section": "test_for_break",
+      "kind": "reject",
+      "adaptation": "Retain labelled break; initialize variables and return observations.",
+      "body": "let i=0;let c=0;L1:for(i=0;i<3;i++){c++;if(i==0)continue;while(1){break L1;}}return {value:[c,i]};",
+      "expected": null,
+      "diagnostic": "unsupported|label",
+      "reason": "Labelled jumps not supported."
+    },
+    {
+      "id": "quickjs-arithmetic",
+      "source": "quickjs",
+      "path": "tests/test_language.js",
+      "sha256": "d4f2744f0e5587daf018a4909ba60962cc1b43664a9ed0f758bc6f63cc14b27b",
+      "section": "test_op1 selected arithmetic/shift/power assertions",
+      "kind": "equivalent",
+      "adaptation": "Select five finite results, preserve operators and expected values; collect observations instead of assert calls.",
+      "body": "let values=[];let r=1+2;values.push(r);r=1-2;values.push(r);r=4<<2;values.push(r);/*checkpoint*/ r=-4>>>1;values.push(r);r=2**8;values.push(r);return {value:values};",
+      "expected": [
+        3,
+        -1,
+        16,
+        2147483646,
+        256
+      ]
+    },
+    {
+      "id": "quickjs-optional-delete",
+      "source": "quickjs",
+      "path": "tests/test_language.js",
+      "sha256": "d4f2744f0e5587daf018a4909ba60962cc1b43664a9ed0f758bc6f63cc14b27b",
+      "section": "test_optional_chaining first three assertions",
+      "kind": "reject",
+      "adaptation": "Select JSON object optional-delete segment; exclude method-containing object; initialize declarations.",
+      "body": "let z=null;let a={b:{c:2}};let results=[];results.push(delete z?.b.c);results.push(delete a?.b.c);/*checkpoint*/ results.push(JSON.stringify(a));return {value:results};",
+      "expected": [
+        true,
+        true,
+        "{\"b\":{}}"
+      ],
+      "diagnostic": "delete",
+      "reason": "delete was already explicitly forbidden by ts-validator; no feature expansion."
+    },
+    {
+      "id": "uninitialized-let",
+      "source": "test262",
+      "path": "test/language/statements/for/head-let-destructuring.js",
+      "sha256": "b9e7746c01683828e7fdd59f7d9706f733ba434d9041ea653bb1ca0f5dd73d42",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Derived guard from upstream uninitialized observation variable; not counted as upstream pass.",
+      "body": "let value;return {value:typeof value};",
+      "expected": null,
+      "diagnostic": "initializ",
+      "reason": "undefined cannot be stored; uninitialized bindings must not silently become empty string."
+    },
+    {
+      "id": "foreach-existing-target",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array.js",
+      "sha256": "79a771f2739e8f33b488bffafe21c93c8ea5c5fc35e2a1077e3b7f4eca921160",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Derived guard for non-declaration target; native reference is 2.",
+      "body": "let value=9;for(value of [1,2]){}return {value};",
+      "expected": null,
+      "diagnostic": "declar|binding",
+      "reason": "Existing-target foreach assignment is not implemented; reject instead of silently writing item."
+    },
+    {
+      "id": "sparse-array",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array.js",
+      "sha256": "79a771f2739e8f33b488bffafe21c93c8ea5c5fc35e2a1077e3b7f4eca921160",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Isolate one non-JSON member of original array; runtime must fail without a successful completion.",
+      "body": "const data=[0,,2];/*checkpoint*/ return {value:data};",
+      "expected": null,
+      "reason": "Statically visible unsupported state is now rejected during compilation; dynamic values remain runtime-checked.",
+      "diagnostic": "persistent|sparse|unsupported"
+    },
+    {
+      "id": "undefined-value",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array.js",
+      "sha256": "79a771f2739e8f33b488bffafe21c93c8ea5c5fc35e2a1077e3b7f4eca921160",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Isolate one non-JSON member of original array; runtime must fail without a successful completion.",
+      "body": "const data=undefined;/*checkpoint*/ return {value:data};",
+      "expected": null,
+      "reason": "Statically visible unsupported state is now rejected during compilation; dynamic values remain runtime-checked.",
+      "diagnostic": "persistent|sparse|unsupported"
+    },
+    {
+      "id": "nan-value",
+      "source": "test262",
+      "path": "test/language/statements/for-of/array.js",
+      "sha256": "79a771f2739e8f33b488bffafe21c93c8ea5c5fc35e2a1077e3b7f4eca921160",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Isolate one non-JSON member of original array; runtime must fail without a successful completion.",
+      "body": "const data=NaN;/*checkpoint*/ return {value:data};",
+      "expected": null,
+      "reason": "Statically visible unsupported state is now rejected during compilation; dynamic values remain runtime-checked.",
+      "diagnostic": "persistent|sparse|unsupported"
+    },
+    {
+      "id": "for-of-pair-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "let value=[];for(const [x,y] of [[34,35],[44,45]]){/*checkpoint*/ value.push([x,y]);}return {value};",
+      "expected": [
+        [
+          34,
+          35
+        ],
+        [
+          44,
+          45
+        ]
+      ]
+    },
+    {
+      "id": "for-of-default-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "let value=0;for(const [x=5] of [[]]){/*checkpoint*/value=x;}return {value};",
+      "expected": 5
+    },
+    {
+      "id": "for-of-rest-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "let value=[];for(const [...x] of [[1,2]]){/*checkpoint*/value=x;}return {value};",
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "for-of-object-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "let value=0;for(const {x} of [{x:1}]){/*checkpoint*/value=x;}return {value};",
+      "expected": 1
+    },
+    {
+      "id": "for-of-hole-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "let value=0;for(const [,x] of [[1,2]]){/*checkpoint*/value=x;}return {value};",
+      "expected": 2
+    },
+    {
+      "id": "for-await-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "for await(const x of [1,2]){}return {value:0};",
+      "expected": null,
+      "diagnostic": "await",
+      "reason": "Reject unsupported binding form explicitly rather than silently miscompile; no added syntax support."
+    },
+    {
+      "id": "for-uninitialized-binding",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Derived boundary variant of upstream single-element binding; not an unchanged upstream test.",
+      "body": "for(let x;false;){}return {value:0};",
+      "expected": null,
+      "diagnostic": "initializ",
+      "reason": "Reject unsupported binding form explicitly rather than silently miscompile; no added syntax support."
+    },
+    {
+      "id": "for-of-shadow-break",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Derived binding/cleanup guard from the selected upstream destructuring test; not an unchanged upstream result.",
+      "body": "let x=99;let total=0;for(const [x,y] of [[1,2],[3,4],[5,6]]){/*checkpoint*/ if(x===1)continue;total+=x+y;break;}return {value:[x,total]};",
+      "expected": [
+        99,
+        7
+      ]
+    },
+    {
+      "id": "for-of-noniterable-element",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "runtime-reject",
+      "adaptation": "Derived binding/cleanup guard from the selected upstream destructuring test; not an unchanged upstream result.",
+      "body": "for(const [x] of [{0:34}]){/*checkpoint*/}return {value:0};",
+      "expected": null,
+      "diagnostic": "iterable",
+      "reason": "Native destructuring cannot yield a persistable complete value; fail explicitly."
+    },
+    {
+      "id": "for-of-missing-element",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-destructuring.js",
+      "sha256": "1c6829fc256c10d9c2d53439f4843fed05a2278a55d07581939b52c6eca6b011",
+      "section": "whole file",
+      "kind": "runtime-reject",
+      "adaptation": "Derived binding/cleanup guard from the selected upstream destructuring test; not an unchanged upstream result.",
+      "body": "for(const [x,y] of [[34]]){/*checkpoint*/}return {value:0};",
+      "expected": null,
+      "diagnostic": "undefined",
+      "reason": "Native destructuring cannot yield a persistable complete value; fail explicitly."
+    },
+    {
+      "id": "object-assignment-identity",
+      "source": "test262",
+      "path": "test/language/expressions/logical-assignment/lgcl-or-assignment-operator.js",
+      "sha256": "d77746c5562967ea73b950e21359f0bb0839ff484f7eb55d12cc04e043f8ad01",
+      "section": "whole file",
+      "kind": "equivalent",
+      "adaptation": "Isolate upstream final object assignment and SameValue identity observation across a checkpoint; require native object identity.",
+      "body": "const obj={n:1};let value=obj;/*checkpoint*/ return {value:value===obj};",
+      "expected": true,
+      "referenceStateNote": "Former JSON-copy difference resolved by the unified reference state contract."
+    },
+    {
+      "id": "for-of-let-illegal-initializer",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-init.js",
+      "sha256": "6e4c9fb63b689773da7ddf62fc8076b65d18a948c8bb5d173e6dc16d711b64ce",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Remove $DONOTEVALUATE, wrap loop in workflow and append required result. Add nonempty iterable so silently ignored initializer cannot hide behind empty iteration.",
+      "body": "for(let x=1 of [2]){}return {value:0};",
+      "expected": null,
+      "diagnostic": "initializ",
+      "reason": "ECMAScript syntax forbids initializer in for-of declaration."
+    },
+    {
+      "id": "for-of-const-illegal-initializer",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-const-init.js",
+      "sha256": "2825af1a1cb6d1f7687b25934a57c9a9d3f1febf225ac3cf9e32f302ddcc8e2c",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Remove $DONOTEVALUATE, wrap loop in workflow and append required result. Add nonempty iterable so silently ignored initializer cannot hide behind empty iteration.",
+      "body": "for(const x=1 of [2]){}return {value:0};",
+      "expected": null,
+      "diagnostic": "initializ",
+      "reason": "ECMAScript syntax forbids initializer in for-of declaration."
+    },
+    {
+      "id": "for-of-pattern-illegal-initializer",
+      "source": "test262",
+      "path": "test/language/statements/for-of/head-let-init.js",
+      "sha256": "6e4c9fb63b689773da7ddf62fc8076b65d18a948c8bb5d173e6dc16d711b64ce",
+      "section": "whole file",
+      "kind": "reject",
+      "adaptation": "Derived array-binding variant of the same illegal initializer syntax.",
+      "body": "for(let [x]=[9] of [[1]]){}return {value:0};",
+      "expected": null,
+      "diagnostic": "initializ",
+      "reason": "ECMAScript syntax forbids initializer in for-of declaration."
+    }
+  ],
+  "supportFiles": {
+    "v8/LICENSE": "6ab33af8774a0f396ee3aeeb761e3229057682d6f9fa7f572e390c2cb3a6e509",
+    "v8/test/mjsunit/mjsunit.js": "4c30bfb9ea6f2a32dc23178425d6c9d002394760f26c23749aaea4abd3a79804",
+    "quickjs/LICENSE": "598fd7fc928e4350abce36e337ba5a1346923c5c692f5be92c3d8e29ddd7c18d",
+    "test262/LICENSE": "4dd9244dfe8197c75348c4b24ab53d29d3b1cfad143ac76b5a3d8942aa354ce0",
+    "test262/harness/sta.js": "1930c54af79455c484799f43e9a28e2b2f15c40d0917c9941ca54e26db243f35",
+    "test262/harness/assert.js": "206e274ca325eb8a652e3911c3fbd090e2480d11ed7579dc17a5d17a2360ed48"
+  },
+  "nativeReferenceSelections": {
+    "quickjs/tests/test_language.js": {
+      "functions": [
+        "assert",
+        "test_op1",
+        "test_optional_chaining"
+      ],
+      "calls": [
+        "test_op1",
+        "test_optional_chaining"
+      ],
+      "reason": "Run unchanged selected function bodies only. Whole-file test_global_var_opt depends on global-eval/property behavior that differs in Node vm; unrelated to the chosen workflow subset."
+    }
+  }
+}

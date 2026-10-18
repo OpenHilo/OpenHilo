@@ -1,0 +1,4 @@
+# Vendored sources are byte-pinned, including upstream whitespace and line endings.
+tests/upstream/test262/** -text -whitespace
+tests/upstream/v8/** -text -whitespace
+tests/upstream/quickjs/** -text -whitespace

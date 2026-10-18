@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {execFileSync}=require('node:child_process');
+const {compileProgram}=require('@openhilo/compiler');
+const packageDir=path.resolve(path.dirname(require.resolve('@openhilo/compiler')),'..');
+const example=path.join(packageDir,'examples/program.json');
+const compiled=compileProgram(JSON.parse(fs.readFileSync(example)));
+assert.equal(compiled.ok,true);assert.deepEqual(compiled.entries,['main.main']);assert.ok(compiled.artifacts.some(a=>a.id==='numbers.left'));
+const output=JSON.parse(execFileSync(process.execPath,[path.join('node_modules','.bin','openhilo-compile'),example],{encoding:'utf8'}));
+assert.equal(output.ok,true);
+(async()=>{const {parseHumanOutputs}=await import('@openhilo/itt-contracts/human-output');assert.deepEqual(parseHumanOutputs({ok:'false'},{ok:'boolean'}),{ok:false});const {parseRunInputs}=await import('@openhilo/itt-contracts/run-inputs');assert.deepEqual(parseRunInputs({n:'2'},{n:{kind:'number'}},'typed-text-v1'),{n:2});})().catch(e=>{console.error(e);process.exitCode=1;});

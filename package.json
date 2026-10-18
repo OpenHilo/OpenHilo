@@ -1,0 +1,54 @@
+{
+  "name": "openhilo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI, code, and humans. One workflow.",
+  "license": "MIT",
+  "type": "commonjs",
+  "workspaces": [
+    "packages/itt-contracts",
+    "packages/ai-contracts",
+    "packages/human-contracts",
+    "packages/runtime-contracts",
+    "packages/studio-contracts",
+    "packages/compiler",
+    "packages/runtime",
+    "packages/tool-host",
+    "adapters/ai-codex",
+    "adapters/ai-sdk",
+    "adapters/code-local",
+    "adapters/human-terminal"
+  ],
+  "scripts": {
+    "build:packages": "npm run build --workspaces --if-present",
+    "test:types": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test:offline",
+    "pretest:offline": "npm run build:packages",
+    "test:offline": "node scripts/test-offline.cjs",
+    "check:boundaries": "node scripts/check-boundaries.cjs",
+    "check:packages": "node scripts/check-packages.cjs",
+    "check:consumers": "node scripts/verify-consumers.cjs",
+    "notices:update": "node scripts/third-party-notices.cjs --write",
+    "check:notices": "node scripts/third-party-notices.cjs",
+    "pretest:semantics": "npm run build:packages",
+    "test:semantics": "node --test tests/integration/upstream-semantics.test.cjs tests/integration/workflow-semantics.test.cjs"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "25.3.0",
+    "jest": "30.2.0",
+    "ts-jest": "29.4.6",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

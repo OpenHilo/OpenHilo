@@ -1,0 +1,145 @@
+{
+  "name": "@openhilo/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent ITT workflow execution, scope, events and controlled suspension recovery",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./execution-engine": {
+      "types": "./dist/execution-engine.d.ts",
+      "require": "./dist/execution-engine.js",
+      "default": "./dist/execution-engine.js"
+    },
+    "./eval-engine": {
+      "types": "./dist/eval-engine.d.ts",
+      "require": "./dist/eval-engine.js",
+      "default": "./dist/eval-engine.js"
+    },
+    "./scope-manager": {
+      "types": "./dist/scope-manager.d.ts",
+      "require": "./dist/scope-manager.js",
+      "default": "./dist/scope-manager.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "require": "./dist/logger.js",
+      "default": "./dist/logger.js"
+    },
+    "./run-manager": {
+      "types": "./dist/run-manager.d.ts",
+      "require": "./dist/run-manager.js",
+      "default": "./dist/run-manager.js"
+    },
+    "./rehydrator": {
+      "types": "./dist/rehydrator.d.ts",
+      "require": "./dist/rehydrator.js",
+      "default": "./dist/rehydrator.js"
+    },
+    "./task-dispatch": {
+      "types": "./dist/task-dispatch.d.ts",
+      "require": "./dist/task-dispatch.js",
+      "default": "./dist/task-dispatch.js"
+    },
+    "./file-reference": {
+      "types": "./dist/file-reference.d.ts",
+      "require": "./dist/file-reference.js",
+      "default": "./dist/file-reference.js"
+    },
+    "./run-service": {
+      "types": "./dist/run-service.d.ts",
+      "require": "./dist/run-service.js",
+      "default": "./dist/run-service.js"
+    },
+    "./dispatcher": {
+      "types": "./dist/dispatcher.d.ts",
+      "require": "./dist/dispatcher.js",
+      "default": "./dist/dispatcher.js"
+    },
+    "./human-tasks": {
+      "types": "./dist/human-tasks.d.ts",
+      "require": "./dist/human-tasks.js",
+      "default": "./dist/human-tasks.js"
+    },
+    "./state-graph": {
+      "types": "./dist/state-graph.d.ts",
+      "require": "./dist/state-graph.js",
+      "default": "./dist/state-graph.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "execution-engine": [
+        "dist/execution-engine.d.ts"
+      ],
+      "eval-engine": [
+        "dist/eval-engine.d.ts"
+      ],
+      "scope-manager": [
+        "dist/scope-manager.d.ts"
+      ],
+      "logger": [
+        "dist/logger.d.ts"
+      ],
+      "run-manager": [
+        "dist/run-manager.d.ts"
+      ],
+      "rehydrator": [
+        "dist/rehydrator.d.ts"
+      ],
+      "task-dispatch": [
+        "dist/task-dispatch.d.ts"
+      ],
+      "file-reference": [
+        "dist/file-reference.d.ts"
+      ],
+      "run-service": [
+        "dist/run-service.d.ts"
+      ],
+      "dispatcher": [
+        "dist/dispatcher.d.ts"
+      ],
+      "human-tasks": [
+        "dist/human-tasks.d.ts"
+      ],
+      "state-graph": [
+        "dist/state-graph.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "examples",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@openhilo/itt-contracts": "0.1.0",
+    "@openhilo/ai-contracts": "0.1.0",
+    "@openhilo/runtime-contracts": "0.1.0",
+    "@openhilo/human-contracts": "0.1.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/runtime#readme",
+  "bugs": {
+    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+  }
+}

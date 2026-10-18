@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2022",
+    "outDir": "dist/esm-build",
+    "declaration": false
+  },
+  "include": [
+    "src/human-output.ts",
+    "src/run-inputs.ts",
+    "src/ai-selection.ts"
+  ]
+}
