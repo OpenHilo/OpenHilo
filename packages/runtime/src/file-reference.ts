@@ -1,4 +1,5 @@
 import * as fsPromises from 'fs/promises';
+import {createReadStream} from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import {AbortError} from '@openhilo/runtime-contracts';
@@ -21,8 +22,9 @@ export async function makeFileRef(
     const stat = await fsPromises.stat(absPath);
     let hash = '';
     if (stat.isFile()) {
-        const content = await fsPromises.readFile(absPath);
-        hash = 'sha256:' + crypto.createHash('sha256').update(content).digest('hex');
+        const digest = crypto.createHash('sha256');
+        for await (const chunk of createReadStream(absPath)) digest.update(chunk);
+        hash = 'sha256:' + digest.digest('hex');
     }
     const mtime = Math.floor(stat.mtimeMs / 1000);
     const relPath = path.relative(workspaceDir, absPath);

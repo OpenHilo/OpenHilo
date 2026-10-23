@@ -56,6 +56,17 @@ Code execution has its existing exit-code-as-data behavior: check `exit_code`
 before declaring success, as the report examples do. Runtime does not promise
 that stopping an AI child cancels every external effect.
 
+Local Code hosts can configure `timeoutMs`, an `AbortSignal`, `killGraceMs`,
+`maxOutputBytes` and `maxResultBytes` through `createCodeExecutor(workdir, options)`.
+The stream and serialized-result limits default to 10 MiB each; the subprocess
+deadline is opt-in. A timeout, cancellation or exceeded limit aborts the Code
+run, with no automatic replay or successful partial outputs. On macOS/Linux,
+termination targets the process group and escalates from SIGTERM to SIGKILL;
+the run lock remains held until subprocess and temporary-file cleanup settles.
+This cannot undo effects or control descendants that deliberately detach into
+another group. See the [local Code controls](../adapters/code-local/README.md#timeouts-cancellation-and-output-limits)
+for exact limits, error reasons and platform boundaries.
+
 ## Recovery limits
 
 Controlled Human checkpoints preserve the original snapshot, scopes and completed

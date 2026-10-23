@@ -2,6 +2,8 @@ import * as path from 'path';
 import {isFileRef, type Value} from '@openhilo/itt-contracts';
 import type {ExecutorFn} from '@openhilo/runtime/execution-engine';
 import {executeCode, executePython} from './process';
+import type {CodeExecutionOptions} from './types';
+import {normalizeOptions} from './process-control';
 
 function toBashEnvVar(v: Value, workspaceDir: string): string {
     if (isFileRef(v)) return path.join(workspaceDir, v.path);
@@ -22,7 +24,14 @@ function toPythonInputValue(v: Value, workspaceDir: string): unknown {
 }
 
 /** Preserve the Bash/Python node ABI behind Runtime's executor port. */
-export function createCodeExecutor(workdir: string, implementations = {executeCode, executePython}): ExecutorFn {
+type Implementations = {executeCode: typeof executeCode; executePython: typeof executePython};
+export function createCodeExecutor(workdir: string, options?: CodeExecutionOptions, implementations?: Implementations): ExecutorFn;
+export function createCodeExecutor(workdir: string, implementations: Implementations): ExecutorFn;
+export function createCodeExecutor(workdir: string, optionsOrImplementations: CodeExecutionOptions | Implementations = {},
+                                   suppliedImplementations: Implementations = {executeCode, executePython}): ExecutorFn {
+    const legacy = 'executeCode' in optionsOrImplementations;
+    const implementations = legacy ? optionsOrImplementations : suppliedImplementations;
+    const options = normalizeOptions(legacy ? {} : optionsOrImplementations);
     return async (node, inputs) => {
         if (node.type !== 'call' || node.executor !== 'code') throw new Error('Local code executor requires a code call node');
         const lang = node.lang ?? 'bash';
@@ -38,6 +47,7 @@ export function createCodeExecutor(workdir: string, implementations = {executeCo
             const pythonInputs = Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toPythonInputValue(value, workspaceDir)]));
 
             const result = await implementations.executePython({
+                ...options,
                 script: node.script ?? '',
                 inputs: pythonInputs,
                 declaredOutputs,
@@ -58,6 +68,7 @@ export function createCodeExecutor(workdir: string, implementations = {executeCo
         const envVars = Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toBashEnvVar(value, workspaceDir)]));
 
         const result = await implementations.executeCode({
+            ...options,
             command: node.script ?? '',
             shell: 'bash',
             envVars,

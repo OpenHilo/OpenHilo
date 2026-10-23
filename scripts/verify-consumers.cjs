@@ -144,8 +144,8 @@ function verifyConsumers(root, output) {
             const closure = dependencyClosure(roots, manifests);
             const dependencies = Object.fromEntries(closure.map(name => [name, `file:${packages.get(name)}`]));
             const devDependencies = {
-                typescript: '5.9.3',
-                '@types/node': '25.3.0', ...(name === 'codex-ui' ? {react: '19.2.4', '@types/react': '19.2.14'} : {})
+                typescript: '6.0.3',
+                '@types/node': '24.19.2', ...(name === 'codex-ui' ? {react: '19.3.1', '@types/react': '19.3.0'} : {})
             };
             fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
                 name: `consumer-${name}`,
@@ -174,7 +174,7 @@ function verifyConsumers(root, output) {
             fs.writeFileSync(path.join(dir, 'install.log'), install);
             assertIsolation(dir, scenario.closure);
             const file = scenario.name === 'codex-ui' ? 'consumer.tsx' : 'consumer.ts';
-            const types = run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'commonjs', '--moduleResolution', 'node', ...(scenario.name === 'codex-ui' ? ['--jsx', 'react-jsx'] : []), file], dir, true);
+            const types = run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'node16', '--moduleResolution', 'node16', '--types', scenario.name === 'codex-ui' ? 'node,react' : 'node', ...(scenario.name === 'codex-ui' ? ['--jsx', 'react-jsx'] : []), file], dir, true);
             fs.writeFileSync(path.join(dir, 'types.log'), types);
             if (scenario.name !== 'codex-ui') fs.writeFileSync(path.join(dir, 'run.log'), run(process.execPath, ['consumer.cjs'], dir, true));
             scenario.status = 'passed';

@@ -91,6 +91,47 @@ The OpenAI/Anthropic SDK examples are experimental. Both official SDK protocols
 are covered by local fixtures; live paid API acceptance remains unverified.
 Passing fixtures does not establish model quality or live provider availability.
 
+## Dependency maintenance
+
+The resource-control and dependency update was verified locally on macOS arm64,
+Node 24.22.1: 914 Node tests plus 104 Jest tests, all seven archive consumers,
+the coverage instrumentation path, fresh lockfile installation, types, package
+boundaries, twelve archives and fourteen notice artifacts. The environment
+matrix above records earlier baseline runs; this update did not repeat those
+other platforms or live paid-provider acceptance.
+
+The 2026-10-23 resource-control update uses TypeScript 6.0.3, Jest 30.5.2,
+ts-jest 29.4.15, OpenAI SDK 7.43.0, Anthropic SDK 1.2.0 and Ajv 8.20.0 with
+ajv-formats 3.0.1. Node type declarations follow the supported Node 24 line
+(24.19.2); isolated UI consumers use React 19.3.1 and its 19.3.0 declarations.
+The compiler embeds TypeScript's JavaScript AST/compiler API. TypeScript 7.0
+does not provide that API, so the compiler and build stay on the compatible
+6.x line, as explained in the [TypeScript release notes](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/).
+CommonJS builds and consumers now use Node16 module resolution; standalone ESM
+artifacts use Bundler resolution, preserving the existing distribution formats.
+TypeScript 6 consumers explicitly select Node types (`types: ["node"]`), plus
+React types for UI consumers; ambient types are no longer implicitly included.
+
+Jest upgrades remove `inflight` and the old glob 7 chain. One scoped root
+override selects `test-exclude` 8.0.0 only under `babel-plugin-istanbul`, replacing
+its glob 10 dependency with glob 13. The published v7/v8 `index.js` implementations
+are identical, and this project's coverage run exercises the integration. This
+override affects development tooling, not consumers of OpenHilo packages. Remove
+it when the upstream dependency range includes v8. To verify that path, run:
+
+```sh
+node --require ./scripts/offline-guard.cjs node_modules/jest/bin/jest.js \
+  --config packages/ai-contracts/jest.config.cjs --runInBand \
+  --coverage --coverageProvider babel
+npm ls --all
+npm audit
+```
+
+The Anthropic 1.x SDK sends API keys using Bearer authentication. Offline tests
+verify that only explicitly configured credentials/endpoints are used; ambient
+authentication and endpoint values remain ignored. Standard JSON Schema formats
+are preserved explicitly with ajv-formats and covered by rejection tests.
+
 ## Limits of these checks
 
 Passing tests does not establish full JavaScript compatibility, arbitrary crash

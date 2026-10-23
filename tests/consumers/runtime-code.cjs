@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {startRun}=require('@openhilo/runtime/run-service');
 const {createDispatcher}=require('@openhilo/runtime/dispatcher');
-const {createCodeExecutor}=require('@openhilo/code-local');
+const {createCodeExecutor,executeCode,CodeProcessError}=require('@openhilo/code-local');
 (async()=>{
  const workdir=path.resolve('workspace');fs.mkdirSync(workdir);
  const entryFile=path.join(workdir,'sum.itt.impl.json');
@@ -12,4 +12,6 @@ const {createCodeExecutor}=require('@openhilo/code-local');
  const run=await startRun({intent:'sum',entryFile,workdir,runsDir:path.join(workdir,'runs'),inputs:{},populateSnapshot:({snapshotDir})=>fs.copyFileSync(entryFile,path.join(snapshotDir,path.basename(entryFile))),onEvent:e=>{if(e.event==='run_complete')result=e.outputs;},createResources:({runId,workdir})=>({executor:createDispatcher({runId,workdir,codeExecutor:createCodeExecutor(workdir)})})});
  assert.equal(run.status,'completed');assert.deepEqual(result,{answer:6});
  const bash=await createCodeExecutor(workdir)({id:'bash',type:'call',executor:'code',script:'value=$((count + 1))',inputsFrom:{},outputsTo:{},outputs:{value:'number'},next:'END'},{count:2});assert.equal(bash.outputs.value,3);
+ await assert.rejects(executeCode({command:'sleep 1',envVars:{},workingDir:workdir,timeoutMs:30,killGraceMs:0}),error=>error instanceof CodeProcessError && error.reason==='timeout');
+ await assert.rejects(executeCode({command:'printf 12345',envVars:{},workingDir:workdir,maxOutputBytes:4,killGraceMs:0}),error=>error instanceof CodeProcessError && error.reason==='output_limit');
 })().catch(e=>{console.error(e);process.exitCode=1;});

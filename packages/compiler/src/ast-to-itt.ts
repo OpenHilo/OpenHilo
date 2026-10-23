@@ -1013,8 +1013,13 @@ function exprText(node: ts.Expression, sf: ts.SourceFile, bindings: LexicalBindi
     if (emitted.diagnostics?.some(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error))
         throw new Error('Expression cannot be emitted as JavaScript');
     const parsed = ts.createSourceFile('expression.js', emitted.outputText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
-    const statement = parsed.statements[0];
-    if (parsed.statements.length !== 1 || !statement || !ts.isVariableStatement(statement) ||
+    // Runtime owns strict evaluation; TypeScript 6's leading directive is not
+    // part of the expression. All other extra statements remain forbidden.
+    const first = parsed.statements[0];
+    const statements = first && ts.isExpressionStatement(first) && ts.isStringLiteral(first.expression) && first.expression.text === 'use strict'
+        ? parsed.statements.slice(1) : parsed.statements;
+    const statement = statements[0];
+    if (statements.length !== 1 || !statement || !ts.isVariableStatement(statement) ||
         statement.declarationList.declarations.length !== 1)
         throw new Error('Expression requires unsupported JavaScript helper statements');
     const initializer = statement.declarationList.declarations[0].initializer;

@@ -11,7 +11,7 @@ const policy = {
     'runtime-contracts': names(['ai-contracts', 'itt-contracts']),
     runtime: names(['human-contracts', 'ai-contracts', 'itt-contracts', 'runtime-contracts']),
     compiler: [...names(['itt-contracts']), 'typescript'],
-    'tool-host': [...names(['ai-contracts']), 'ajv'],
+    'tool-host': [...names(['ai-contracts']), 'ajv', 'ajv-formats'],
     'ai-codex': [...names(['ai-contracts', 'studio-contracts']), 'react'],
     'ai-sdk': [...names(['ai-contracts', 'tool-host']), 'openai', '@anthropic-ai/sdk'],
     'code-local': names(['itt-contracts', 'runtime-contracts', 'runtime']),

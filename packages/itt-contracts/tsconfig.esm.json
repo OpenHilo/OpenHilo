@@ -3,7 +3,8 @@
   "compilerOptions": {
     "module": "ES2022",
     "outDir": "dist/esm-build",
-    "declaration": false
+    "declaration": false,
+    "moduleResolution": "Bundler"
   },
   "include": [
     "src/human-output.ts",

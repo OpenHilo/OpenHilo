@@ -1,4 +1,5 @@
-import Ajv = require('ajv');
+import Ajv, {type ValidateFunction} from 'ajv';
+import addFormats from 'ajv-formats';
 import {type Failure, isJsonValue, type JsonObject, type ToolDefinition, type ToolHost} from '@openhilo/ai-contracts';
 
 export interface RegisteredTool extends ToolDefinition {
@@ -16,7 +17,7 @@ const failure = (code: Failure['code'], message: string, safeToReplay: boolean):
 /** One immutable registry per host. No automatic retries or durable deduplication. */
 export function createToolHost(tools: readonly RegisteredTool[]): ToolHost {
     const entries = new Map<string, {
-        definition: ToolDefinition; validate: Ajv.ValidateFunction;
+        definition: ToolDefinition; validate: ValidateFunction;
         handler: RegisteredTool['handler']; readOnly: boolean
     }>();
     for (const tool of tools) {
@@ -27,11 +28,12 @@ export function createToolHost(tools: readonly RegisteredTool[]): ToolHost {
         const definition = copy({name: tool.name, description: tool.description, inputSchema: tool.inputSchema});
         // Separate validators prevent unrelated tools' local $id declarations from colliding.
         const ajv = new Ajv({
-            allErrors: true, strictKeywords: true, strictDefaults: true,
+            allErrors: true, strictSchema: true, strictTypes: false, strictTuples: false,
             coerceTypes: false, useDefaults: false, removeAdditional: false, ownProperties: true
         });
+        addFormats(ajv);
         const validate = ajv.compile(definition.inputSchema);
-        if (validate.$async) throw new Error(`Async schemas are not supported: ${tool.name}`);
+        if ('$async' in validate && validate.$async) throw new Error(`Async schemas are not supported: ${tool.name}`);
         entries.set(tool.name, {definition, validate, handler: tool.handler, readOnly: tool.readOnly === true});
     }
     return {

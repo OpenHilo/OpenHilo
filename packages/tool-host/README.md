@@ -25,6 +25,9 @@ const host = createToolHost([{
 Schemas use synchronous JSON Schema draft-07, compiled at registration. Unknown
 keywords/formats and duplicate tool names fail early. Arguments are checked
 without coercion, default insertion or property removal; output must be JSON.
+Ajv 8 performs validation, with `ajv-formats` preserving standard formats such
+as email and date; invalid calendar dates are rejected. Unsupported draft-04
+schemas must be migrated to draft-07 before registration.
 Definitions, arguments and successful results cross the boundary as copies.
 Schemas and handlers are trusted application code, not an untrusted-code sandbox.
 

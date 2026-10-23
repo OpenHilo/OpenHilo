@@ -1,7 +1,34 @@
 import type {Value, ValueType} from '@openhilo/itt-contracts';
+import {AbortError} from '@openhilo/runtime-contracts';
+
+export interface CodeExecutionOptions {
+    /** Optional subprocess deadline, in milliseconds. Includes waiting for inherited pipes. */
+    timeoutMs?: number;
+    /** Combined stdout/stderr byte budget; defaults to 10 MiB. Infinity disables it. */
+    maxOutputBytes?: number;
+    /** Serialized business-result byte budget; defaults to 10 MiB. Infinity disables it. */
+    maxResultBytes?: number;
+    /** SIGTERM grace period before SIGKILL, default 1000 ms. */
+    killGraceMs?: number;
+    /** Host cancellation; awaiting the returned promise also awaits process cleanup. */
+    signal?: AbortSignal;
+}
+
+export type CodeProcessFailureReason = 'timeout' | 'cancelled' | 'output_limit' | 'result_limit';
+
+/** Control failures abort the workflow; partial outputs are diagnostic only. */
+export class CodeProcessError extends AbortError {
+    stdout = '';
+    stderr = '';
+    constructor(public readonly reason: CodeProcessFailureReason, message: string) {
+        super(message);
+        this.name = 'CodeProcessError';
+        Object.setPrototypeOf(this, new.target.prototype);
+    }
+}
 
 /** Code executor 配置 */
-export interface CodeExecutorConfig {
+export interface CodeExecutorConfig extends CodeExecutionOptions {
     command: string;
     envVars: Record<string, string>;
     workingDir: string;
@@ -11,7 +38,7 @@ export interface CodeExecutorConfig {
 }
 
 /** Python executor 配置 */
-export interface PythonExecutorConfig {
+export interface PythonExecutorConfig extends CodeExecutionOptions {
     script: string;
     inputs: Record<string, unknown>;   // bare variable names, FileRef already unwrapped to abs path
     declaredOutputs: Record<string, ValueType>;

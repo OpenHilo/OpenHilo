@@ -15,11 +15,10 @@ for (const provider of ['openai', 'anthropic']) {
             const headers = new Headers(init.headers);
             assert.equal(headers.get('openai-organization'), null);
             assert.equal(headers.get('openai-project'), null);
-            if (provider === 'openai') assert.equal(headers.get('authorization'), 'Bearer explicit-offline-key');
-            else {
-                assert.equal(headers.get('x-api-key'), 'explicit-offline-key');
-                assert.equal(headers.get('authorization'), null);
-            }
+            // Anthropic SDK 1.x also sends an explicitly supplied API key as
+            // Bearer auth. The ambient auth token must never replace it.
+            assert.equal(headers.get('authorization'), 'Bearer explicit-offline-key');
+            assert.equal(headers.get('x-api-key'), null);
             const body = provider === 'openai'
                 ? {
                     id: 'response',

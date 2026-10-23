@@ -5,11 +5,12 @@
  * Input/output contract: adapters/code-local/README.md.
  */
 
-import {spawn} from 'child_process';
 import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import {AbortError, ExecutionError} from '@openhilo/runtime-contracts';
+import {AbortError} from '@openhilo/runtime-contracts';
+import {CodeProcessError} from './types';
+import {checkCancelled, normalizeOptions, readResult, runProcess} from './process-control';
 import type {ValueType} from '@openhilo/itt-contracts';
 import type {CodeExecutionResult as TaskResult, CodeExecutorConfig, CodeOutput, PythonExecutorConfig} from './types';
 import {makeFileRef} from '@openhilo/runtime/file-reference';
@@ -184,92 +185,51 @@ export async function validateBashOutput(
  * @throws AbortError     - on type mismatch or missing declared output
  */
 export async function executeCode(config: CodeExecutorConfig): Promise<TaskResult> {
-    const startedAt = new Date().toISOString();
+    const options = normalizeOptions(config);
+    checkCancelled(options.signal);
     const declaredOutputs = config.declaredOutputs ?? {};
     const outputKeys = Object.keys(declaredOutputs);
-    const hasDeclaredOutputs = outputKeys.length > 0;
-
     const prologue = generateBashPrologue(outputKeys);
-    const interpreter = config.shell ?? (hasDeclaredOutputs ? 'bash' : 'sh');
-    const fullScript = prologue ? prologue + '\n' + config.command : config.command;
+    const interpreter = config.shell ?? (outputKeys.length ? 'bash' : 'sh');
+    const temporary = outputKeys.length ? await fsPromises.mkdtemp(path.join(os.tmpdir(), 'itt_bash_')) : undefined;
+    const outFilePath = temporary ? path.join(temporary, 'output') : undefined;
+    let result: TaskResult | undefined;
+    try {
+        result = await runProcess(interpreter, ['-c', prologue ? prologue + '\n' + config.command : config.command], {
+            workingDir: config.workingDir,
+            env: {...process.env, ...config.envVars, ...(outFilePath ? {_ITT_OUT: outFilePath} : {})},
+            resultFile: outFilePath,
+        }, options);
+        if (!outFilePath) return result;
+        let outData: Buffer;
+        try {
+            outData = await readResult(outFilePath, options.maxResultBytes);
+        } catch (error) {
+            if (error instanceof CodeProcessError) throw error;
+            throw new AbortError(`code output '${outputKeys[0]}' not set`);
+        }
+        const rawOutputs = parseBashOutputFile(outData);
+        result.typedOutputs = [];
+        for (const [name, declaredType] of Object.entries(declaredOutputs)) {
+            const raw = Object.prototype.hasOwnProperty.call(rawOutputs, name) ? rawOutputs[name] : null;
+            result.typedOutputs.push(await validateBashOutput(name, raw, declaredType, config.workspaceDir ?? config.workingDir));
+        }
+        return result;
+    } catch (error) {
+        annotateFailure(error, result);
+        throw error;
+    } finally {
+        if (temporary) await fsPromises.rm(temporary, {recursive: true, force: true});
+    }
+}
 
-    const outFilePath = hasDeclaredOutputs
-        ? path.join(os.tmpdir(), `itt_bash_out_${Date.now()}_${Math.random().toString(36).slice(2)}`)
-        : '';
-
-    const env: NodeJS.ProcessEnv = {...process.env, ...config.envVars};
-    if (hasDeclaredOutputs) env['_ITT_OUT'] = outFilePath;
-
-    return new Promise((resolve, reject) => {
-        const child = spawn(interpreter, ['-c', fullScript], {
-            cwd: config.workingDir,
-            env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout?.on('data', (chunk: Buffer) => {
-            stdout += chunk.toString();
-        });
-        child.stderr?.on('data', (chunk: Buffer) => {
-            stderr += chunk.toString();
-        });
-
-        child.on('close', async (code: number | null, signal: NodeJS.Signals | null) => {
-            const finishedAt = new Date().toISOString();
-            const result: TaskResult = {
-                text: stdout,
-                stderr,
-                files: [],
-                exitCode: code ?? (signal ? 128 + (os.constants.signals[signal] ?? 0) : 1),
-                meta: {executor: 'code', startedAt, finishedAt},
-            };
-
-            if (!hasDeclaredOutputs) {
-                resolve(result);
-                return;
-            }
-
-            try {
-                let outData: Buffer;
-                try {
-                    outData = await fsPromises.readFile(outFilePath);
-                } catch {
-                    throw new AbortError(`code output '${outputKeys[0]}' not set`);
-                }
-
-                const rawOutputs = parseBashOutputFile(outData);
-                const typedOutputs: CodeOutput[] = [];
-
-                const workspaceDir = config.workspaceDir ?? config.workingDir;
-                for (const [name, declaredType] of Object.entries(declaredOutputs)) {
-                    const raw = Object.prototype.hasOwnProperty.call(rawOutputs, name) ? rawOutputs[name] : null;
-                    const co = await validateBashOutput(name, raw, declaredType, workspaceDir);
-                    typedOutputs.push(co);
-                }
-
-                result.typedOutputs = typedOutputs;
-                resolve(result);
-            } catch (err) {
-                if (err instanceof Error && result.exitCode !== 0) {
-                    const detail = stderr.trim();
-                    err.message += ` (process exited with exit code ${result.exitCode})${detail ? `\n${detail.length > 4000 ? "[last 4000 stderr characters]\n" : ""}${detail.slice(-4000)}` : ''}`;
-                }
-                reject(err);
-            } finally {
-                await fsPromises.unlink(outFilePath).catch(() => {
-                });
-            }
-        });
-
-        child.on('error', (err: Error) => {
-            reject(
-                new ExecutionError(`Failed to spawn process: ${err.message}`, 'unknown', 'code'),
-            );
-        });
-    });
+function annotateFailure(error: unknown, result?: TaskResult): void {
+    if (!result) return;
+    if (error instanceof CodeProcessError) {error.stdout = result.text; error.stderr = result.stderr;}
+    if (error instanceof Error && result.exitCode !== 0) {
+        const detail = result.stderr.trim();
+        error.message += ` (process exited with exit code ${result.exitCode})${detail ? `\n${detail.length > 4000 ? "[last 4000 stderr characters]\n" : ""}${detail.slice(-4000)}` : ''}`;
+    }
 }
 
 // ── Python type validation ────────────────────────────────────────────────────
@@ -343,108 +303,43 @@ async function validatePythonOutput(
  * @throws AbortError on type mismatch, missing output, or non-serialisable value
  */
 export async function executePython(config: PythonExecutorConfig): Promise<TaskResult> {
-    const startedAt = new Date().toISOString();
+    const options = normalizeOptions(config);
+    checkCancelled(options.signal);
     const {script, inputs, declaredOutputs, workspaceDir, workingDir} = config;
-
-    const runnerPath = path.resolve(__dirname, '_itt_runner.py');
-    const tmpSuffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const inputFilePath = path.join(os.tmpdir(), `itt_py_input_${tmpSuffix}`);
-    const scriptFilePath = path.join(os.tmpdir(), `itt_py_script_${tmpSuffix}.py`);
-    const outputFilePath = path.join(os.tmpdir(), `itt_py_output_${tmpSuffix}`);
-
-    await fsPromises.writeFile(inputFilePath, JSON.stringify(inputs), 'utf-8');
-    await fsPromises.writeFile(scriptFilePath, script, 'utf-8');
-
-    const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        _ITT_INPUT: inputFilePath,
-        _ITT_SCRIPT_FILE: scriptFilePath,
-        _ITT_OUTPUT: outputFilePath,
-        _ITT_DECLARED_KEYS: JSON.stringify(Object.keys(declaredOutputs)),
-    };
-
-    return new Promise((resolve, reject) => {
-        const child = spawn('python3', [runnerPath], {
-            cwd: workingDir,
-            env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (chunk: Buffer) => {
-            stdout += chunk.toString();
-        });
-        child.stderr?.on('data', (chunk: Buffer) => {
-            stderr += chunk.toString();
-        });
-
-        child.on('close', async (code: number | null, signal: NodeJS.Signals | null) => {
-            const finishedAt = new Date().toISOString();
-            const result: TaskResult = {
-                text: stdout,
-                stderr,
-                files: [],
-                exitCode: code ?? (signal ? 128 + (os.constants.signals[signal] ?? 0) : 1),
-                meta: {executor: 'code', startedAt, finishedAt},
-            };
-
-            try {
-                // Ordinary exceptions and signals can exit before the runner writes
-                // JSON. Stream-only callers still need that exit status as data.
-                if (Object.keys(declaredOutputs).length === 0) {
-                    result.typedOutputs = [];
-                    resolve(result);
-                    return;
-                }
-                let outputJson: { outputs: Record<string, unknown>; not_serialisable: string[] };
-                try {
-                    const outputData = await fsPromises.readFile(outputFilePath, 'utf-8');
-                    outputJson = JSON.parse(outputData) as typeof outputJson;
-                } catch {
-                    const firstKey = Object.keys(declaredOutputs)[0] ?? '?';
-                    throw new AbortError(`code output '${firstKey}' not set`);
-                }
-
-                const typedOutputs: CodeOutput[] = [];
-                for (const [name, declaredType] of Object.entries(declaredOutputs)) {
-                    const isNotSerialisable = outputJson.not_serialisable.includes(name);
-                    const hasValue = Object.prototype.hasOwnProperty.call(outputJson.outputs, name);
-
-                    if (!hasValue && !isNotSerialisable) {
-                        throw new AbortError(`code output '${name}' not set`);
-                    }
-                    const co = await validatePythonOutput(
-                        name,
-                        outputJson.outputs[name],
-                        declaredType,
-                        workspaceDir,
-                        isNotSerialisable,
-                    );
-                    typedOutputs.push(co);
-                }
-                result.typedOutputs = typedOutputs;
-                resolve(result);
-            } catch (err) {
-                if (err instanceof Error && result.exitCode !== 0) {
-                    const detail = stderr.trim();
-                    err.message += ` (process exited with exit code ${result.exitCode})${detail ? `\n${detail.length > 4000 ? "[last 4000 stderr characters]\n" : ""}${detail.slice(-4000)}` : ''}`;
-                }
-                reject(err);
-            } finally {
-                await Promise.all([
-                    fsPromises.unlink(inputFilePath).catch(() => {
-                    }),
-                    fsPromises.unlink(scriptFilePath).catch(() => {
-                    }),
-                    fsPromises.unlink(outputFilePath).catch(() => {
-                    }),
-                ]);
-            }
-        });
-
-        child.on('error', (err: Error) => {
-            reject(new ExecutionError(`Failed to spawn python3: ${err.message}`, 'unknown', 'code'));
-        });
-    });
+    const temporary = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'itt_python_'));
+    const inputFilePath = path.join(temporary, 'input.json');
+    const scriptFilePath = path.join(temporary, 'script.py');
+    const outputFilePath = path.join(temporary, 'output.json');
+    let result: TaskResult | undefined;
+    try {
+        await fsPromises.writeFile(inputFilePath, JSON.stringify(inputs), 'utf8');
+        await fsPromises.writeFile(scriptFilePath, script, 'utf8');
+        result = await runProcess('python3', [path.resolve(__dirname, '_itt_runner.py')], {
+            workingDir, resultFile: Object.keys(declaredOutputs).length ? outputFilePath : undefined,
+            env: {...process.env, _ITT_INPUT: inputFilePath, _ITT_SCRIPT_FILE: scriptFilePath,
+                _ITT_OUTPUT: outputFilePath, _ITT_DECLARED_KEYS: JSON.stringify(Object.keys(declaredOutputs))},
+        }, options);
+        result.typedOutputs = [];
+        // Ordinary exceptions and signals remain exit-code data for stream-only tasks.
+        if (Object.keys(declaredOutputs).length === 0) return result;
+        let outputJson: {outputs: Record<string, unknown>; not_serialisable: string[]};
+        try {
+            outputJson = JSON.parse((await readResult(outputFilePath, options.maxResultBytes)).toString('utf8'));
+        } catch (error) {
+            if (error instanceof CodeProcessError) throw error;
+            throw new AbortError(`code output '${Object.keys(declaredOutputs)[0]}' not set`);
+        }
+        for (const [name, declaredType] of Object.entries(declaredOutputs)) {
+            const isNotSerialisable = outputJson.not_serialisable.includes(name);
+            const hasValue = Object.prototype.hasOwnProperty.call(outputJson.outputs, name);
+            if (!hasValue && !isNotSerialisable) throw new AbortError(`code output '${name}' not set`);
+            result.typedOutputs.push(await validatePythonOutput(name, outputJson.outputs[name], declaredType, workspaceDir, isNotSerialisable));
+        }
+        return result;
+    } catch (error) {
+        annotateFailure(error, result);
+        throw error;
+    } finally {
+        await fsPromises.rm(temporary, {recursive: true, force: true});
+    }
 }

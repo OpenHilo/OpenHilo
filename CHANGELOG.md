@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Local Code tasks support host-configured subprocess deadlines, AbortSignal
+  cancellation and process-group termination with SIGTERM/SIGKILL escalation.
+  Cleanup finishes before execution settles and the run lock is released.
+- Captured stdout/stderr and serialized business results each have a default
+  10 MiB budget. Hosts can raise these limits or opt out with `Infinity`.
+  Limits abort the task rather than returning truncated business results.
+  UTF-8 split across pipe chunks is preserved; file references use streaming hashes.
+- Upgrade OpenAI/Anthropic SDKs, Ajv with explicit standard formats, TypeScript
+  6, Jest and ts-jest. Build configurations use modern module resolution.
+  See [dependency maintenance](docs/validation.md#dependency-maintenance) for
+  compiler compatibility and the scoped coverage-tool dependency override.
+
 ## 0.1.0 — source distribution
 
 - Twelve `@openhilo/*` packages for contracts, compilation, execution, tools and

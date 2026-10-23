@@ -41,8 +41,13 @@ export function guardOptionalExpression(text: string, shouldGuard: (node: Member
     // The immediate arrow owns all lowering temporaries. None becomes workflow
     // state, leaks into another expression, or needs a checkpoint representation.
     const output = ts.createSourceFile('expression.js', result.outputText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
-    const statement = output.statements[0];
-    if (output.statements.length !== 1 || !statement || !ts.isExpressionStatement(statement))
+    // TypeScript 6 adds a strict-mode directive. Runtime already evaluates in
+    // strict mode; permit only that leading directive, never helper statements.
+    const first = output.statements[0];
+    const statements = first && ts.isExpressionStatement(first) && ts.isStringLiteral(first.expression) && first.expression.text === 'use strict'
+        ? output.statements.slice(1) : output.statements;
+    const statement = statements[0];
+    if (statements.length !== 1 || !statement || !ts.isExpressionStatement(statement))
         throw new Error('Optional-chain expression emitted unexpected helper statements');
     return statement.expression.getText(output);
 }
