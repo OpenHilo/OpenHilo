@@ -1,4 +1,5 @@
-import {typeToValueType} from './type-contract';
+import type { InputShape } from '@openhilo/itt-contracts/run-inputs';
+import {typeToValueType, typeToInputShape} from './type-contract';
 import {awaitedCall, directCallee, unwrapExpression} from './expression-forms';
 // src/translator/ast-to-itt.ts
 import * as ts from 'typescript';
@@ -914,15 +915,16 @@ export function compileFunctionBody(
 ): {
     entry: string;
     nodes: Record<string, CFGNode>;
-    inputs: { name: string; kind: ValueType }[];
+    inputs: { name: string; kind: ValueType; shape?: InputShape }[];
     outputs: { name: string; kind: ValueType }[];
     sourceMap: Record<string, SourceSpan>;
     resultVar: string;
 } {
     // Extract input params from function signature
-    const inputs: { name: string; kind: ValueType }[] = (fn.parameters ?? []).map(p => ({
+    const inputs: { name: string; kind: ValueType; shape?: InputShape }[] = (fn.parameters ?? []).map(p => ({
         name: (p.name as ts.Identifier).text,
         kind: typeToValueType(p.type),
+        shape: typeToInputShape(p.type),
     }));
 
     // For inter-intent calls: add registry entries as CallDeclarations with executor:'intent'.

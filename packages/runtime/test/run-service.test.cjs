@@ -404,3 +404,15 @@ test('resource close errors still release the run lock', async t => {
     }), /Close failed/);
     assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), false);
 });
+
+test('nested input validation uses the saved workflow before any executor resources are created', async t => {
+    const shape = {type:'object',properties:{budget:{shape:{type:'number'}},skills:{shape:{type:'array',items:{type:'text'}}}}};
+    const f = setup(t, {...simple, inputs:{context:{kind:'json',shape}}});
+    let resources = 0;
+    for (const value of [{budget:'10',skills:[]},{budget:0,skills:[false]},{}]) {
+        await assert.rejects(startRun({...f.options,inputEncoding:'typed-text-v1',inputs:{context:JSON.stringify(value)},createResources:()=>{resources++;throw new Error('must not execute');}}), /context\.(budget|skills)/);
+    }
+    assert.equal(resources,0);
+    const result = await startRun({...f.options,inputEncoding:'typed-text-v1',inputs:{context:JSON.stringify({budget:0,skills:[]})},createResources:()=>({executor:async()=>({outputs:{}})})});
+    assert.equal(result.status,'completed');
+});

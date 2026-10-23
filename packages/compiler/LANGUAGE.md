@@ -127,7 +127,7 @@ Plain object/array/string methods are evaluated by JS, but escaping functions,
 non-persistable results and reflection remain checked; this is not support for
 the full built-in library.
 
-## 4. Types are coarse-grained contracts
+## 4. Type contracts and entry inputs
 
 | TS annotation | ITT kind |
 | --- | --- |
@@ -138,8 +138,15 @@ the full built-in library.
 | any, unknown, no annotation, null, mixed unions | json |
 | Standalone FilePath / DirPath | file / dir |
 
-Parentheses and readonly wrappers use the same mapping. Literal sets, field
-structure and tuple lengths are not validated. Unknown named, advanced and
+Parentheses and readonly wrappers use the same mapping. Compiled workflow entry
+inputs additionally retain a `shape` descriptor for fields, optional properties,
+arrays, tuples, literal sets, unions and Record/index values. Hosts using
+`typed-text-v1` validate this shape before execution and can generate field forms.
+Extra object properties are retained, consistent with structural typing; declared
+index signatures still constrain their values. `any`, `unknown` and missing
+annotations are unstructured JSON. Old artifacts need recompilation to acquire
+shape metadata. Legacy input encoding, internal calls, locals and outputs retain
+the coarse contracts above; this is not full TypeScript type checking. Unknown named, advanced and
 function types are explicitly rejected, including nested annotations and local
 destructuring annotations. Only the FilePath/DirPath marker aliases are accepted;
 user-defined type aliases are not resolved. Outputs require

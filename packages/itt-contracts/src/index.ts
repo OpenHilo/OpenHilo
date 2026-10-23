@@ -1,3 +1,4 @@
+import type { InputShape } from './run-inputs';
 import type {AiSelection} from './ai-selection';
 export interface ExtensionRequirement {
     namespace: string;
@@ -105,7 +106,7 @@ export interface CallNode {
     skills?: string[];     // ai: CC skill names (namespaced), e.g. ['superpowers:tdd']
     script?: string;       // code: 脚本内容
     lang?: string;         // code: "bash"（默认）或 "py"
-    inputs?: Record<string, { kind: ValueType }>;   // 函数签名：形参声明
+    inputs?: Record<string, { kind: ValueType; shape?: InputShape }>;   // 函数签名：形参声明
     outputs?: Record<string, ValueType>;             // 函数签名：返回值声明
     inputsFrom: Record<string, string>;  // 实参绑定：paramName → localVar
     outputsTo: Record<string, string>;   // 输出捕获：outputField → varName
@@ -163,7 +164,7 @@ export interface CFGITT {
     imports?: Record<string, string>;  // 短名 → 全限定名（如 { "helper": "utils.helper" }）
     entry: string;
     nodes: Record<string, CFGNode>;
-    inputs?: Record<string, { kind: ValueType; ask?: string }>;
+    inputs?: Record<string, { kind: ValueType; shape?: InputShape; ask?: string }>;
     outputs?: Record<string, string>;  // outputKey → varName
     /** Optional scope root holding the checked whole return object. */
     resultVar?: string;
@@ -199,7 +200,7 @@ export interface LeafITT {
     skills?: string[];         // ai: CC skill names (namespaced), e.g. ['superpowers:tdd']
     constraints?: string[];   // ai/human: 约束条件
     intent?: string;          // ai/human: 任务描述（支持 ${var} 插值）
-    inputs?: Record<string, { kind: ValueType }>;   // 函数形参声明
+    inputs?: Record<string, { kind: ValueType; shape?: InputShape }>;   // 函数形参声明
     outputs?: Record<string, ValueType>;             // 函数返回值声明，outputKey → type
     nodes: Record<string, never>;  // 始终为 {}，供 Snapshotter 遍历
     entry: string;                 // 占位符，Leaf ITT 无实际 CFG entry

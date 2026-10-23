@@ -1,3 +1,4 @@
+import type { InputShape } from '@openhilo/itt-contracts/run-inputs';
 import * as ts from 'typescript';
 import type {ValueType} from '@openhilo/itt-contracts';
 
@@ -95,4 +96,60 @@ export function outputFields(node: ts.TypeNode | undefined): { name: string; kin
         seen.add(name);
         return {name, kind: typeToValueType(member.type)};
     });
+}
+
+/** Preserve entry input structure in addition to its transport kind. No new TS syntax is accepted here. */
+export function typeToInputShape(node: ts.TypeNode | undefined): InputShape {
+    const kind = typeToValueType(node);
+    if (!node) return {type: 'json'};
+    if (ts.isParenthesizedTypeNode(node) || (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword)) return typeToInputShape(node.type);
+    if (ts.isLiteralTypeNode(node)) {
+        const literal = node.literal;
+        if (literal.kind === ts.SyntaxKind.NullKeyword) return {type: 'null'};
+        if (ts.isStringLiteral(literal)) return {type: 'literal', value: literal.text};
+        if (literal.kind === ts.SyntaxKind.TrueKeyword || literal.kind === ts.SyntaxKind.FalseKeyword) return {type: 'literal', value: literal.kind === ts.SyntaxKind.TrueKeyword};
+        return {type: 'literal', value: ts.isPrefixUnaryExpression(literal) ? (literal.operator === ts.SyntaxKind.MinusToken ? -1 : 1) * Number((literal.operand as ts.NumericLiteral).text) : Number((literal as ts.NumericLiteral).text)};
+    }
+    if (ts.isUnionTypeNode(node)) return {type: 'union', options: node.types.map(typeToInputShape)};
+    if (ts.isArrayTypeNode(node)) return {type: 'array', items: typeToInputShape(node.elementType)};
+    if (ts.isTupleTypeNode(node)) {
+        const items: Extract<InputShape, {type: 'tuple'}>['items'] = [];
+        for (const element of node.elements) {
+            const named = ts.isNamedTupleMember(element);
+            const optional = named ? !!element.questionToken : ts.isOptionalTypeNode(element);
+            const rest = named ? !!element.dotDotDotToken : ts.isRestTypeNode(element);
+            const type = named || ts.isOptionalTypeNode(element) || ts.isRestTypeNode(element) ? element.type : element;
+            const shape = typeToInputShape(type);
+            if (rest && shape.type === 'tuple') items.push(...shape.items);
+            else if (rest && shape.type === 'array') items.push({shape: shape.items, rest: true});
+            else items.push({shape, ...(optional ? {optional: true} : {})});
+        }
+        return {type: 'tuple', items};
+    }
+    if (ts.isTypeLiteralNode(node)) {
+        const properties: Extract<InputShape, {type: 'object'}>['properties'] = {};
+        let additional: InputShape | undefined;
+        let numericAdditional: InputShape | undefined;
+        for (const member of node.members) {
+            if (ts.isPropertySignature(member) && member.name && (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name) || ts.isNumericLiteral(member.name))) {
+                Object.defineProperty(properties, member.name.text, {enumerable: true, configurable: true, value: {shape: typeToInputShape(member.type), ...(member.questionToken ? {optional: true} : {})}});
+            } else if (ts.isIndexSignatureDeclaration(member)) {
+                if (typeToValueType(member.parameters[0]?.type) === 'number') numericAdditional = typeToInputShape(member.type);
+                else additional = typeToInputShape(member.type);
+            } else unsupported(member, 'Input fields require static property names');
+        }
+        return {type: 'object', properties, ...(additional ? {additional} : {}), ...(numericAdditional ? {numericAdditional} : {})};
+    }
+    if (node.kind === ts.SyntaxKind.ObjectKeyword) return {type: 'union', options: [{type: 'object', properties: {}, additional: {type: 'json'}}, {type: 'array', items: {type: 'json'}}]};
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+        const args = node.typeArguments ?? [];
+        if (node.typeName.text === 'Array' || node.typeName.text === 'ReadonlyArray') return {type: 'array', items: typeToInputShape(args[0])};
+        if (node.typeName.text === 'Record') {
+            const keys = typeToInputShape(args[0]), value = typeToInputShape(args[1]);
+            const options = keys.type === 'union' ? keys.options : [keys];
+            if (options.every(key => key.type === 'literal')) return {type: 'object', properties: Object.fromEntries(options.map(key => [String((key as Extract<InputShape, {type: 'literal'}>).value), {shape: value}]))};
+            return {type: 'object', properties: {}, additional: value, numericKeys: typeToValueType(args[0]) === 'number'};
+        }
+    }
+    return {type: kind};
 }

@@ -41,7 +41,7 @@ test('prototype-named parameters survive declaration schemas and cross-intent ar
     assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
     const main = result.artifacts.find(artifact => artifact.id === 'main.main');
     assert.equal(Object.hasOwn(main.declaration.inputs, '__proto__'), true);
-    assert.deepEqual(main.declaration.inputs.__proto__, {kind: 'number'});
+    assert.deepEqual(main.declaration.inputs.__proto__, {kind: 'number', shape: {type: 'number'}});
     const call = Object.values(main.implementation.nodes).find(node => node.type === 'call');
     assert.equal(Object.hasOwn(call.inputsFrom, '__proto__'), true);
     assert.equal(call.inputsFrom.__proto__, '$__proto__');

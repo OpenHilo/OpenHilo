@@ -25,7 +25,10 @@ have no runtime dependencies or filesystem access. The root entry provides the g
 `@openhilo/itt-contracts/run-inputs` exports `RunInputEncoding`, `RunInputSchema`, `RunInputError`,
 `validateRunInputWire` and `parseRunInputs` in CJS and browser ESM. Run wire values are strings. Explicit
 `typed-text-v1` decodes against the input schema exactly once, rejects missing/unknown fields, non-finite numbers and
-negative zero, and preserves JSON strings distinctly from objects. Without an encoding, historical CLI conversion
+negative zero, and preserves JSON strings distinctly from objects. When an input has optional `shape` metadata,
+`validateInputShape` validates nested fields, array elements, tuple lengths, literals and unions with a field path
+in each error. `InputShape` and `inputShapeLabel` let hosts render the same schema. No values are coerced or removed.
+This applies to typed workflow entry inputs, not to all internal calls or outputs. Without an encoding, historical CLI conversion
 remains: Number for numeric fields, true/1 for booleans, literal strings for JSON/text. The runtime applies its JSON
 persistence checks afterward. See [run input encoding](../../docs/embedding.md#run-input-encoding) for
 examples and compatibility boundaries.

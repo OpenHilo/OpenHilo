@@ -177,7 +177,7 @@ export function compileMultiIntent(
             sig.node, sourceFile, allDeclarations, registry, sig.outputs, nsPath, importMap,
         );
 
-        const inputsSchema = Object.fromEntries(compiled.inputs.map(input => [input.name, {kind: input.kind}]));
+        const inputsSchema = Object.fromEntries(compiled.inputs.map(input => [input.name, {kind: input.kind, shape: input.shape}]));
         const declOutputsSchema = Object.fromEntries(compiled.outputs.map(output => [output.name, output.kind]));
         const implOutputsSchema = Object.fromEntries(compiled.outputs.map(output => [output.name, output.name]));
 

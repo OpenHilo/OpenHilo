@@ -3,7 +3,82 @@ import {parseHumanOutputValue} from './human-output';
 
 /** Absent encoding retains the historical CLI coercion. New forms opt in explicitly. */
 export type RunInputEncoding = 'typed-text-v1';
-export type RunInputSchema = Record<string, { kind: ValueType }>;
+/** Serializable data shape for workflow entry forms, independent of the TypeScript compiler. */
+export type InputShape =
+    | { type: ValueType | 'null' }
+    | { type: 'literal'; value: string | number | boolean | null }
+    | { type: 'object'; properties: Record<string, { shape: InputShape; optional?: boolean }>; additional?: InputShape; numericAdditional?: InputShape; numericKeys?: boolean }
+    | { type: 'array'; items: InputShape }
+    | { type: 'tuple'; items: { shape: InputShape; optional?: boolean; rest?: boolean }[] }
+    | { type: 'union'; options: InputShape[] };
+export type RunInputDefinition = { kind: ValueType; shape?: InputShape };
+export type RunInputSchema = Record<string, RunInputDefinition>;
+
+/** Validate without coercing, dropping fields or inventing values. Errors identify the nested field. */
+export function validateInputShape(value: unknown, shape: InputShape, field = 'input'): void {
+    const fail = (expected: string): never => { throw new RunInputError(`${field}: ${expected}`, field); };
+    switch (shape.type) {
+        case 'json': return;
+        case 'text': if (typeof value !== 'string') fail('expected text'); return;
+        case 'file': case 'dir':
+            if (typeof value !== 'string' || !value.trim()) fail(`expected a ${shape.type === 'file' ? 'file' : 'directory'} path`);
+            return;
+        case 'number':
+            if (typeof value !== 'number' || !Number.isFinite(value) || Object.is(value, -0)) fail('expected a finite number');
+            return;
+        case 'boolean': if (typeof value !== 'boolean') fail('expected true or false'); return;
+        case 'null': if (value !== null) fail('expected null'); return;
+        case 'literal': if (value !== shape.value) fail(`expected ${JSON.stringify(shape.value)}`); return;
+        case 'array':
+            if (!Array.isArray(value)) return fail('expected a list');
+            value.forEach((item, index) => validateInputShape(item, shape.items, `${field}[${index}]`)); return;
+        case 'object': {
+            if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail('expected an object');
+            const record = value as Record<string, unknown>;
+            for (const [key, property] of Object.entries(shape.properties)) {
+                if (!Object.hasOwn(record, key)) {
+                    if (!property.optional) throw new RunInputError(`${field}.${key}: required`, `${field}.${key}`);
+                } else validateInputShape(record[key], property.shape, `${field}.${key}`);
+            }
+            // TypeScript is structurally typed: retain extra fields. Validate them only when an index signature declares their type.
+            if (shape.additional) for (const [key, item] of Object.entries(record)) {
+                if (shape.numericKeys && (key.trim() === '' || !Number.isFinite(Number(key)))) fail(`expected a numeric key, received ${JSON.stringify(key)}`);
+                validateInputShape(item, shape.additional, `${field}.${key}`);
+            }
+            if (shape.numericAdditional) for (const [key, item] of Object.entries(record)) {
+                if (key.trim() !== '' && Number.isFinite(Number(key))) validateInputShape(item, shape.numericAdditional, `${field}.${key}`);
+            }
+            return;
+        }
+        case 'union': {
+            for (const option of shape.options) {
+                try { validateInputShape(value, option, field); return; } catch (error) { if (!(error instanceof RunInputError)) throw error; }
+            }
+            return fail(`expected one of: ${shape.options.map(inputShapeLabel).join(' | ')}`);
+        }
+        case 'tuple': {
+            if (!Array.isArray(value)) return fail('expected a tuple');
+            const items = shape.items;
+            function matches(part: number, index: number): boolean {
+                if (part === items.length) return index === (value as unknown[]).length;
+                const item = items[part];
+                if ((item.optional || item.rest) && matches(part + 1, index)) return true;
+                if (index >= (value as unknown[]).length) return false;
+                try { validateInputShape((value as unknown[])[index], item.shape, `${field}[${index}]`); } catch (error) { if (error instanceof RunInputError) return false; throw error; }
+                return matches(item.rest ? part : part + 1, index + 1);
+            }
+            if (!matches(0, 0)) fail('tuple items do not match their declared types or length');
+            return;
+        }
+    }
+}
+
+export function inputShapeLabel(shape: InputShape): string {
+    if (shape.type === 'literal') return JSON.stringify(shape.value);
+    if (shape.type === 'array') return `${inputShapeLabel(shape.items)}[]`;
+    if (shape.type === 'union') return shape.options.map(inputShapeLabel).join(' | ');
+    return shape.type;
+}
 
 export class RunInputError extends Error {
     constructor(message: string, public readonly field?: string) {
@@ -40,8 +115,10 @@ export function parseRunInputs(raw: unknown, schema: RunInputSchema, encoding?: 
         try {
             const decoded = parseHumanOutputValue(value, kind, field);
             if (hasNegativeZero(decoded)) throw new Error('Negative zero cannot survive JSON persistence');
+            if (schema[field].shape) validateInputShape(decoded, schema[field].shape!, field);
             return [field, decoded];
-        } catch {
+        } catch (error) {
+            if (error instanceof RunInputError) throw error;
             throw new RunInputError(`Invalid ${kind} run input: ${field}`, field);
         }
     }));
