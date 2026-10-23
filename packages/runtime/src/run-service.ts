@@ -157,7 +157,8 @@ export async function startRun(options: StartRunOpts): Promise<StartRunResult> {
     return execute(options, context, manager, {inputs});
 }
 
-export async function resumeRun(options: ResumeRunOpts): Promise<StartRunResult> {
+/** Read-only validation is repeated under ownership before accepting any input. */
+function prepareResume(options: ResumeRunOpts) {
     const record = JSON.parse(fs.readFileSync(path.join(options.runDir, 'run.json'), 'utf8'));
     validateRoutingIdentity(options.aiRoutingIdentity);
     validateRoutingIdentity(record.ai_routing_identity);
@@ -179,7 +180,12 @@ export async function resumeRun(options: ResumeRunOpts): Promise<StartRunResult>
     if (state.kind === 'suspended_no_output') throw new Error('resumeRun: run is suspended at a human node — provide --human-output');
     if (state.kind === 'unsafe_to_replay') throw new Error(`resumeRun: node ${state.nodeRunId} is unsafe to replay; inspect its effects before starting new work`);
     const {callStack, globalSeq, pendingHumanOutput, pendingHumanTask} = state;
-    let {pendingHumanSubmission} = state;
+    const {pendingHumanSubmission} = state;
+    // Preflight spans separate reads; another owner may advance between them.
+    // Never bind an answer read for one task to a newer checkpoint.
+    if (task?.taskId !== pendingHumanTask?.taskId) {
+        throw new HumanOutputError('Human operation is no longer current; reload the pending task');
+    }
     if (pendingHumanSubmission) {
         if (!task) throw new HumanOutputError('Human operation is no longer current');
         validateHumanSubmission(task, pendingHumanSubmission);
@@ -198,23 +204,45 @@ export async function resumeRun(options: ResumeRunOpts): Promise<StartRunResult>
     }
     // Reject lossy saved values before taking a lock, changing status or creating resources.
     for (const frame of callStack) new ScopeManager().deserialize(frame.scope_stack);
-    if (submission) {
-        // Legacy callers lack a receipt ID; preserve it when retrying the same answer.
-        const previous = readHumanSubmission(options.runDir, submission.taskId);
-        if (!options.humanSubmission && previous) submission.submissionId = previous.submissionId;
-        const receipt = submitHumanTask(options.runDir, submission);
-        if (!['accepted', 'duplicate'].includes(receipt.status)) throw new HumanOutputError(receipt.message ?? receipt.status);
-        pendingHumanSubmission = readHumanSubmission(options.runDir, submission.taskId);
-    }
+    return {record, submission, callStack, globalSeq, pendingHumanOutput, pendingHumanSubmission, pendingHumanTask, humanNodeRunId: state.humanNodeRunId};
+}
+
+export async function resumeRun(options: ResumeRunOpts): Promise<StartRunResult> {
+    const before = prepareResume(options);
     const manager = RunManager.resume(options.runDir);
-    const context: RunContext = {
-        aiRoutingIdentity: options.aiRoutingIdentity,
-        runId: manager.runId, runDir: options.runDir, workdir: record.workdir,
-        snapshotDir: path.join(options.runDir, '.snapshot'),
-        entryIntent: typeof record.entry_intent === 'string' ? record.entry_intent : callStack[0]?.intent_name ?? record.intent
-    };
-    return execute({...options, humanMode: options.humanMode ?? 'suspend'}, context, manager,
-        {inputs: {}, resumeFrom: {callStack, globalSeq}, pendingHumanOutput, pendingHumanSubmission, pendingHumanTask});
+    try {
+        const prepared = prepareResume(options);
+        if (options.humanOutput !== undefined && (prepared.humanNodeRunId !== before.humanNodeRunId ||
+            prepared.submission?.taskId !== before.submission?.taskId ||
+            prepared.pendingHumanTask?.taskId !== before.pendingHumanTask?.taskId)) {
+            throw new HumanOutputError('Human operation is no longer current; reload the pending task');
+        }
+        const {record, submission, callStack, globalSeq, pendingHumanOutput, pendingHumanTask} = prepared;
+        let {pendingHumanSubmission} = prepared;
+        if (submission) {
+            // Legacy callers lack a receipt ID; preserve it when retrying the same answer.
+            const previous = readHumanSubmission(options.runDir, submission.taskId);
+            if (!options.humanSubmission && previous) submission.submissionId = previous.submissionId;
+            const receipt = submitHumanTask(options.runDir, submission);
+            if (!['accepted', 'duplicate'].includes(receipt.status)) throw new HumanOutputError(receipt.message ?? receipt.status);
+            pendingHumanSubmission = readHumanSubmission(options.runDir, submission.taskId);
+        }
+        const context: RunContext = {
+            aiRoutingIdentity: options.aiRoutingIdentity,
+            runId: manager.runId, runDir: options.runDir, workdir: record.workdir,
+            snapshotDir: path.join(options.runDir, '.snapshot'),
+            entryIntent: typeof record.entry_intent === 'string' ? record.entry_intent : callStack[0]?.intent_name ?? record.intent
+        };
+        // Return without awaiting so preflight/checkpoint graphs are not retained
+        // by this frame during a later Human wait. Ownership lasts until cleanup.
+        return execute({...options, humanMode: options.humanMode ?? 'suspend'}, context, manager,
+            {inputs: {}, resumeFrom: {callStack, globalSeq}, pendingHumanOutput, pendingHumanSubmission, pendingHumanTask})
+            .finally(() => manager.release());
+    } catch (error) {
+        // Under-lock validation can fail before execute owns cleanup.
+        manager.release();
+        throw error;
+    }
 }
 
 async function execute(options: RunComposition, context: RunContext, manager: RunManager,

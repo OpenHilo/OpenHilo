@@ -14,7 +14,7 @@ function toBashEnvVar(v: Value, workspaceDir: string): string {
  * Convert an ITT Value to a Python-native value for the input JSON.
  * FileRef → absolute path string; all other types pass through
  * (JSON round-trip preserves number/boolean/string/array/object natively).
- * §3 of the ABI spec.
+ * See this package's README for the local Code input/output contract.
  */
 function toPythonInputValue(v: Value, workspaceDir: string): unknown {
     if (isFileRef(v)) return path.join(workspaceDir, v.path);
@@ -26,7 +26,7 @@ export function createCodeExecutor(workdir: string, implementations = {executeCo
     return async (node, inputs) => {
         if (node.type !== 'call' || node.executor !== 'code') throw new Error('Local code executor requires a code call node');
         const lang = node.lang ?? 'bash';
-        // stdout/stderr/exit_code are reserved stream captures — never pass to ITT_ var mechanism
+        // Stream captures are not business variables in the script.
         const RESERVED = new Set(['stdout', 'stderr', 'exit_code']);
         const declaredOutputs = Object.fromEntries(
             Object.entries(node.outputs ?? {}).filter(([k]) => !RESERVED.has(k)),
@@ -34,7 +34,7 @@ export function createCodeExecutor(workdir: string, implementations = {executeCo
         const workspaceDir = workdir;
 
         if (lang === 'py' || lang === 'python') {
-            // Python path: pass native-typed inputs as JSON globals (§3)
+            // Python path: pass native-typed inputs as JSON globals.
             const pythonInputs = Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toPythonInputValue(value, workspaceDir)]));
 
             const result = await implementations.executePython({
@@ -54,11 +54,12 @@ export function createCodeExecutor(workdir: string, implementations = {executeCo
             return {outputs};
         }
 
-        // Bash path: inject as env vars (§4)
+        // Bash workflow nodes keep their interpreter regardless of output declarations.
         const envVars = Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toBashEnvVar(value, workspaceDir)]));
 
         const result = await implementations.executeCode({
             command: node.script ?? '',
+            shell: 'bash',
             envVars,
             workingDir: workspaceDir,
             declaredOutputs,

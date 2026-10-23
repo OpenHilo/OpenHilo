@@ -27,9 +27,20 @@ usual Node manager, verify the active version, then rerun the install/build
 commands. For example, **if you already use nvm**:
 
 ```sh
-nvm install 24
-nvm use 24
+nvm install
+nvm use
 node --version
+```
+
+The checkout's `.nvmrc` selects Node 24. Node 22 is also supported. Other Node
+managers can select either supported major explicitly. Before installing, check
+the executables the examples actually invoke:
+
+```sh
+node --version
+npm --version
+python3 --version
+bash --version
 ```
 
 Python must be available as `python3`; Bash must be available as `bash`. Installing
@@ -66,6 +77,10 @@ Offline mode echoes scripted text, including your requirements; it does not call
 The workflow still executes real Human and Code steps. To use a real model, complete
 Codex setup below and repeat with `--provider codex` and a new output directory.
 [Full example and source](../examples/compose-tasks/README.md).
+
+To write your own workflow, follow the [complete minimal host](embedding.md#complete-minimal-host).
+To install the libraries into another application, use [local tarballs](#embed-packages-from-local-tarballs).
+There is no global `openhilo` application to start after this installation.
 
 ## Install and sign in to Codex
 

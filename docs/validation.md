@@ -35,12 +35,12 @@ npm run check:consumers
 
 | Check | What it verifies |
 | --- | --- |
-| `test:types` | Public TypeScript declarations and consuming code |
+| `test:types` | AI contract source and typed contract test consumers; all workspace sources are also checked by the build, and archive consumers by `check:consumers` |
 | `npm test` | Compiler/runtime behavior, adapters, recovery, data ownership, failure paths and examples |
 | `check:boundaries` | Package dependency and export boundaries |
 | `check:packages -- --pack` | Contents and required assets of all twelve package archives |
 | `check:notices` | Dependency licenses and generated notice files |
-| `check:consumers` | Compiler, Runtime+Human, Runtime+Code, Codex, SDK and Codex UI in six isolated installations |
+| `check:consumers` | Routing, Compiler, Runtime+Human, Runtime+Code, Codex, SDK and Codex UI in seven isolated installations |
 
 Tests use temporary data and scripted providers. A guard blocks live model and
 credential commands. Installation needs registry access or a populated npm cache;

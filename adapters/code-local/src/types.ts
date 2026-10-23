@@ -5,6 +5,7 @@ export interface CodeExecutorConfig {
     command: string;
     envVars: Record<string, string>;
     workingDir: string;
+    shell?: 'bash' | 'sh';                         // explicit interpreter; omitted retains legacy selection
     declaredOutputs?: Record<string, ValueType>;  // typed outputs to capture via EXIT trap
     workspaceDir?: string;                         // ITT_WORKSPACE for file/dir path resolution
 }
@@ -12,7 +13,7 @@ export interface CodeExecutorConfig {
 /** Python executor 配置 */
 export interface PythonExecutorConfig {
     script: string;
-    inputs: Record<string, unknown>;   // ITT_-prefixed keys, FileRef already unwrapped to abs path
+    inputs: Record<string, unknown>;   // bare variable names, FileRef already unwrapped to abs path
     declaredOutputs: Record<string, ValueType>;
     workspaceDir: string;
     workingDir: string;

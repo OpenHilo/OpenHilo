@@ -259,12 +259,15 @@ test('resource cleanup retains the lock until it settles, then same-process resu
             humanOutput: {},
             createResources: f.options.createResources
         }), /already running/);
+        const {currentHumanTask, readHumanSubmission} = require('@openhilo/runtime/human-tasks');
+        assert.equal(readHumanSubmission(runDir, currentHumanTask(runDir).taskId), undefined,
+            'A rejected concurrent resume must not consume its Human answer');
     } finally {
         release();
     }
     await pending;
     assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), false);
-    assert.equal((await resumeRun({runDir, createResources: f.options.createResources})).status, 'completed');
+    assert.equal((await resumeRun({runDir, humanOutput: {}, createResources: f.options.createResources})).status, 'completed');
 });
 
 test('resuming an accepted task with an adapter does not confirm the following human task', async t => {

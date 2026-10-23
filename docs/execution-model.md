@@ -62,6 +62,26 @@ Controlled Human checkpoints preserve the original snapshot, scopes and complete
 steps. Incomplete terminal log records do not revive an older checkpoint. Live
 local PID locks prevent a second local resume. These are not distributed leases.
 
+### Local lock recovery
+
+Lock acquisition and dead-owner reclamation use an exclusive `run.lock.guard`
+directory; the active owner is recorded in `run.lock`. Competing recovery attempts
+fail rather than waiting and replaying a stale checkpoint. Recovery rereads the
+checkpoint under ownership, and a rejected concurrent `resumeRun` does not accept
+its supplied Human answer. Retry that answer only for the same still-pending task;
+prefer `humanSubmission` with a task ID when integrating a UI or queue.
+
+An interrupted acquisition can leave the coordination directory or an incomplete
+PID file. These are deliberately not auto-expired. Stop all hosts that could use
+this run, verify that no local process owns it, and preserve its records before
+removing the abandoned `run.lock.guard` directory and any invalid/dead-owner
+`run.lock`. Then retry recovery. If a process is alive or its liveness cannot be
+determined, leave its lock intact. Valid dead PID locks without an abandoned guard
+are reclaimed automatically. This procedure does not make uncertain external
+effects safe to replay; replay-safety validation still applies.
+
+### External effects and sessions
+
 Failures carrying `safeToReplay: false` cannot be resumed automatically. A tool
 may have committed an effect before disconnecting: inspect its external outcome
 and use application-owned idempotency before attempting new work. Neither a

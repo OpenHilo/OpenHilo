@@ -13,6 +13,95 @@ creation/editing, `FilePath` handoff and Human checkpoint recovery.
 driving a bounded AI file-repair loop, with Code verifying the result.
 These examples run locally without a server or database.
 
+## Complete minimal host
+
+After installing and building the checkout as described in the
+[Quickstart](quickstart.md), save the following as `starter.cjs` in the repository
+root and run `node starter.cjs`. It requires Python 3 on `PATH`, uses no model or
+credentials, and prints `{"doubled":42}` followed by `completed` and the saved run
+directory. Each invocation creates a fresh temporary workspace; keep the printed
+directory if you want to inspect its records.
+
+```js
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { compileProgram } = require('@openhilo/compiler');
+const { startRun } = require('@openhilo/runtime/run-service');
+const { createDispatcher } = require('@openhilo/runtime/dispatcher');
+const { createCodeExecutor } = require('@openhilo/code-local');
+
+async function main() {
+  const files = {
+    'double.ts': `
+      declare function double_by_code(lang: string, script: string,
+        inputs: { count: number }): Promise<{ doubled: number }>;
+      export async function main(count: number): Promise<{ doubled: number }> {
+        const result = await double_by_code("python", "doubled = count * 2", { count });
+        return { doubled: result.doubled };
+      }`,
+  };
+  const compiled = compileProgram({
+    files, entries: [{ file: 'double.ts', exportName: 'main' }],
+  });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openhilo-starter-'));
+  const workdir = path.join(root, 'workspace');
+  const artifactsDir = path.join(root, 'artifacts');
+  fs.mkdirSync(workdir);
+  fs.mkdirSync(artifactsDir);
+  for (const artifact of compiled.artifacts) {
+    for (const [suffix, value] of [
+      ['itt.impl.json', artifact.implementation],
+      ['itt.json', artifact.declaration],
+      ['sourcemap.json', artifact.sourceMap],
+    ]) {
+      fs.writeFileSync(path.join(artifactsDir, `${artifact.id}.${suffix}`),
+        JSON.stringify(value), { flag: 'wx' });
+    }
+  }
+  fs.mkdirSync(path.join(artifactsDir, 'sources'));
+  fs.writeFileSync(path.join(artifactsDir, 'sources', 'double.ts'), files['double.ts']);
+
+  const result = await startRun({
+    intent: compiled.entries[0],
+    entryFile: path.join(artifactsDir, `${compiled.entries[0]}.itt.impl.json`),
+    workdir, runsDir: path.join(root, 'runs'),
+    inputs: { count: '21' }, inputEncoding: 'typed-text-v1',
+    createResources: ({ runId, workdir }) => ({
+      executor: createDispatcher({ runId, workdir,
+        codeExecutor: createCodeExecutor(workdir) }),
+    }),
+    populateSnapshot: ({ snapshotDir }) =>
+      fs.cpSync(artifactsDir, snapshotDir, { recursive: true }),
+    onEvent: event => {
+      if (event.event === 'run_complete') console.log(JSON.stringify(event.outputs));
+    },
+  });
+  console.log(result.status, result.runDir);
+  if (result.status !== 'completed') process.exitCode = 1;
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
+```
+
+For a separate application, install the local package tarballs first, including
+the dependency closure described in the Quickstart, then use the same public
+imports. The following sections explain how to extend this host.
+
+## Terminology
+
+| Term | Meaning |
+| --- | --- |
+| Host | Your application that chooses paths, supplies executors and calls `startRun` or `resumeRun`. |
+| ITT | The compiler's serialized workflow contract and implementation artifacts, consumed by Runtime. |
+| CFG | The control-flow graph inside a compiled implementation: nodes and edges describing execution. |
+| Run | One workflow execution with its inputs, status and persistent records. |
+| Snapshot | The compiled artifacts frozen for a run; recovery uses these rather than recompiling current source. |
+| Human task | A particular pending request for human business outputs; submissions must match its identity. |
+| Attempt | One execution try, whose records help distinguish retries and replay. |
+| AI session | Provider conversation state that may continue across compatible AI calls; it is not the workflow run. |
+
 ## Compile and assemble a run
 
 `compileProgram` does no filesystem I/O. Give it a closed virtual source graph:
@@ -111,6 +200,23 @@ by this legacy parser. Runtime still checks retained values afterward. New hosts
 should opt into typed mode instead of relying on these coercions. Recovery uses
 the saved values and does not reinterpret an old run with a new encoding; start
 a new run to change its input encoding.
+
+## File and directory boundaries
+
+`FilePath` and `DirPath` describe paths, not file uploads or immutable content.
+The boundary at which a path is used determines what is checked:
+
+| Boundary | Guarantee |
+| --- | --- |
+| Run input parsing | Accepts a path string; does not check existence, copy content or grant access. |
+| Code output | Requires a nonempty path, normalizes it under the workspace, and checks existence and the declared file/directory kind. Symbolic links are followed for the kind check; their real target is not constrained by this adapter. |
+| Runtime AI output | Checks workspace containment, including the resolved symbolic-link target, existence and the declared kind. |
+| Saved file reference | Records a relative path, modification time and file SHA-256; directory hashes are empty. This records an observation, not a copy of the content. |
+| Run snapshot | Freezes compiled workflow artifacts. Files referenced in the workspace can still change; the host owns their retention and any content snapshots it needs. |
+
+These output checks do not restrict what a local Code process can read or write.
+See [execution grants](execution-model.md#execution-grants-and-cleanup) for host
+permissions and recovery limits.
 
 ## Your own Human adapter
 

@@ -15,6 +15,7 @@ import type {RunJson, RunStatus} from './types';
 
 export class RunManager {
     private runJson: RunJson;
+    private ownedLock?: {dev: number; ino: number};
 
     private constructor(
         public readonly runDir: string,
@@ -90,21 +91,19 @@ export class RunManager {
             );
         }
 
-        // 检查 PID 锁
-        const lockPath = path.join(runDir, 'run.lock');
-        if (fs.existsSync(lockPath)) {
-            const lockPid = Number(fs.readFileSync(lockPath, 'utf-8').trim());
-            if (isProcessAlive(lockPid)) {
-                throw new Error(
-                    `Run is already running (PID ${lockPid}). Cannot resume while process is still running.`,
-                );
-            }
-        }
-
-        // 更新 lock 为当前 PID
         const mgr = new RunManager(runDir, runJson);
         mgr.writeLock();
-        return mgr;
+        try {
+            // The previous owner may have advanced while this caller was reading.
+            mgr.runJson = JSON.parse(fs.readFileSync(runJsonPath, 'utf8')) as RunJson;
+            if (nonResumable.includes(mgr.runJson.status)) {
+                throw new Error(`Cannot resume run with status "${mgr.runJson.status}". Use 'start' to create a new run.`);
+            }
+            return mgr;
+        } catch (error) {
+            mgr.release();
+            throw error;
+        }
     }
 
     // ── 静态工厂 ──────────────────────────────────────────────────────────────
@@ -126,12 +125,18 @@ export class RunManager {
 
     /** Release only this process's lock after executor/resource cleanup has settled. */
     release(): void {
+        const owned = this.ownedLock;
+        if (!owned) return;
         const lock = path.join(this.runDir, 'run.lock');
         try {
-            if (fs.readFileSync(lock, 'utf8').trim() === String(process.pid)) fs.unlinkSync(lock);
+            const stat = fs.statSync(lock);
+            // A later manager in the same process is a different owner. Acquirers
+            // cannot replace our existing lock while this PID is alive.
+            if (stat.dev === owned.dev && stat.ino === owned.ino && fs.readFileSync(lock, 'utf8').trim() === String(process.pid)) fs.unlinkSync(lock);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
+        this.ownedLock = undefined;
     }
 
     // ── 私有方法 ──────────────────────────────────────────────────────────────
@@ -148,7 +153,39 @@ export class RunManager {
     }
 
     private writeLock(): void {
-        fs.writeFileSync(path.join(this.runDir, 'run.lock'), String(process.pid), 'utf-8');
+        const lock = path.join(this.runDir, 'run.lock');
+        const guard = path.join(this.runDir, 'run.lock.guard');
+        // Serialize stale-lock removal as well as creation. O_EXCL alone cannot
+        // stop a stale contender from unlinking another contender's new lock.
+        try {
+            fs.mkdirSync(guard, {mode: 0o700});
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+            throw new Error('Run lock transition is busy or interrupted; retry after the active process settles, or inspect run.lock.guard before recovering it.');
+        }
+        try {
+            let previous: string | undefined;
+            try {previous = fs.readFileSync(lock, 'utf8').trim();}
+            catch (error) {if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;}
+            if (previous !== undefined) {
+                const pid = Number(previous);
+                if (!/^[1-9]\d*$/.test(previous) || !Number.isSafeInteger(pid) || pid > 0x7fffffff) {
+                    throw new Error('Invalid run lock PID; inspect the lock and active processes before recovery.');
+                }
+                if (isProcessAlive(pid)) throw new Error(`Run is already running (PID ${pid}). Cannot resume while process is still running.`);
+                fs.unlinkSync(lock);
+            }
+            const fd = fs.openSync(lock, 'wx', 0o600);
+            try {
+                fs.writeFileSync(fd, String(process.pid), 'utf8');
+                const stat = fs.fstatSync(fd);
+                this.ownedLock = {dev: stat.dev, ino: stat.ino};
+            } finally {
+                fs.closeSync(fd);
+            }
+        } finally {
+            fs.rmdirSync(guard);
+        }
     }
 }
 
@@ -168,7 +205,8 @@ function isProcessAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);
         return true;
-    } catch {
-        return false;
+    } catch (error) {
+        // EPERM and other inconclusive failures do not establish a dead owner.
+        return (error as NodeJS.ErrnoException).code !== 'ESRCH';
     }
 }

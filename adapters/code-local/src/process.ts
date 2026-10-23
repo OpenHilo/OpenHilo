@@ -2,8 +2,7 @@
  * Code Executor Module
  *
  * Executes shell commands as subprocesses with environment variable injection.
- * See: docs/modules/02-executor-code.md
- * ABI: docs/superpowers/specs/2026-03-17-code-executor-abi-design.md
+ * Input/output contract: adapters/code-local/README.md.
  */
 
 import {spawn} from 'child_process';
@@ -90,6 +89,28 @@ export function parseBashOutputFile(data: Buffer): RawOutputs {
 
 export {makeFileRef} from '@openhilo/runtime/file-reference';
 
+/** File and directory declarations validate the actual filesystem kind. */
+async function validatePathOutput(name: string, raw: string, kind: 'file' | 'dir', workspaceDir: string): Promise<CodeOutput> {
+    if (!raw) throw new AbortError(`code output '${name}' not set`);
+    const workspace = path.resolve(workspaceDir);
+    const abs = path.resolve(workspace, raw);
+    const relative = path.relative(workspace, abs);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new AbortError(`code output '${name}': path must be under ITT_WORKSPACE`);
+    }
+    let stat;
+    try {
+        stat = await fsPromises.stat(abs);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        throw new AbortError(`code output '${name}': path '${relative}' not found`);
+    }
+    if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) {
+        throw new AbortError(`code output '${name}': path must be ${kind}`);
+    }
+    return {name, type: kind, value: await makeFileRef(abs, workspace, name)};
+}
+
 /**
  * Validate and convert a raw bash string output to a typed ITT Value.
  * Throws AbortError on type mismatch or missing value.
@@ -138,16 +159,7 @@ export async function validateBashOutput(
 
         case 'file':
         case 'dir': {
-            if (!raw) {
-                throw new AbortError(`code output '${name}' not set`);
-            }
-            const abs = path.isAbsolute(raw) ? raw : path.join(workspaceDir, raw);
-            const wsWithSep = workspaceDir.endsWith(path.sep) ? workspaceDir : workspaceDir + path.sep;
-            if (!abs.startsWith(wsWithSep) && abs !== workspaceDir) {
-                throw new AbortError(`code output '${name}': path must be under ITT_WORKSPACE`);
-            }
-            const ref = await makeFileRef(abs, workspaceDir, name);
-            return {name, type: declaredType, value: ref};
+            return validatePathOutput(name, raw, declaredType, workspaceDir);
         }
     }
 }
@@ -159,7 +171,8 @@ export async function validateBashOutput(
  *
  * When `config.declaredOutputs` is non-empty, prepends a bash EXIT-trap
  * prologue, runs with `bash` (not `sh`), and captures typed output variables.
- * Without `declaredOutputs`, runs with `sh` (backward-compatible).
+ * Without `declaredOutputs`, defaults to `sh` (backward-compatible).
+ * An explicit `config.shell` overrides this default; workflow Bash nodes use it.
  *
  * @param config.command          - shell command (from node.script)
  * @param config.envVars          - bare-name environment variables (keyed by exact parameter name)
@@ -177,7 +190,7 @@ export async function executeCode(config: CodeExecutorConfig): Promise<TaskResul
     const hasDeclaredOutputs = outputKeys.length > 0;
 
     const prologue = generateBashPrologue(outputKeys);
-    const interpreter = hasDeclaredOutputs ? 'bash' : 'sh';
+    const interpreter = config.shell ?? (hasDeclaredOutputs ? 'bash' : 'sh');
     const fullScript = prologue ? prologue + '\n' + config.command : config.command;
 
     const outFilePath = hasDeclaredOutputs
@@ -311,13 +324,7 @@ async function validatePythonOutput(
             if (typeof raw !== 'string') {
                 throw new AbortError(`code output '${name}': expected string path, got ${typeof raw}`);
             }
-            const abs = path.isAbsolute(raw) ? raw : path.join(workspaceDir, raw);
-            const wsWithSep = workspaceDir.endsWith(path.sep) ? workspaceDir : workspaceDir + path.sep;
-            if (!abs.startsWith(wsWithSep) && abs !== workspaceDir) {
-                throw new AbortError(`code output '${name}': path must be under ITT_WORKSPACE`);
-            }
-            const ref = await makeFileRef(abs, workspaceDir, name);
-            return {name, type: declaredType, value: ref};
+            return validatePathOutput(name, raw, declaredType, workspaceDir);
         }
     }
 }
@@ -328,7 +335,7 @@ async function validatePythonOutput(
  * Execute a Python script in an isolated subprocess via _itt_runner.py.
  *
  * The runner:
- *   1. Loads input JSON from $_ITT_INPUT → native Python globals (ITT_-prefixed)
+ *   1. Loads input JSON from $_ITT_INPUT → native Python globals (bare input names)
  *   2. exec()s user script inside the subprocess
  *   3. Reads declared output vars from globals dict
  *   4. Writes output JSON to $_ITT_OUTPUT
@@ -383,6 +390,13 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
             };
 
             try {
+                // Ordinary exceptions and signals can exit before the runner writes
+                // JSON. Stream-only callers still need that exit status as data.
+                if (Object.keys(declaredOutputs).length === 0) {
+                    result.typedOutputs = [];
+                    resolve(result);
+                    return;
+                }
                 let outputJson: { outputs: Record<string, unknown>; not_serialisable: string[] };
                 try {
                     const outputData = await fsPromises.readFile(outputFilePath, 'utf-8');
