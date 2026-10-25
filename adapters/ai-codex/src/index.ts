@@ -7,6 +7,7 @@ import {
     type Capability,
     ContractError,
     createTaskExecution,
+    DEFAULT_AI_TIMEOUT_MS,
     type ExecutionHost,
     isJsonValue,
     type JsonObject,
@@ -26,7 +27,7 @@ export interface CodexTaskExecutorOptions {
     sandbox?: 'read-only' | 'workspace-write';
     /** An explicit alternate Codex home. Authentication remains owned by the CLI. */
     codexHome?: string;
-    /** Per-attempt bound even when the host supplies no deadline. Default five minutes. */
+    /** Per-attempt bound even when the host supplies no deadline. Excludes user-answer waits. Default twelve hours. */
     timeoutMs?: number;
 }
 
@@ -119,13 +120,14 @@ export class CodexTaskExecutor implements AiTaskExecutor {
             if (this.busy.has(threadId)) fail('invalid_request', 'Codex session already has an active attempt', true);
             this.busy.set(threadId, reservation);
         }
-        const deadlineAt = new Date(Math.min(Date.now() + (this.options.timeoutMs ?? 300000), host.deadlineAt ? Date.parse(host.deadlineAt) : Infinity)).toISOString();
+        const deadlineAt = new Date(Math.min(Date.now() + (this.options.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS), host.deadlineAt ? Date.parse(host.deadlineAt) : Infinity)).toISOString();
         const execution = createTaskExecution(task, {...host, deadlineAt}, async context => {
             let peer: CodexTransport | undefined, turnId: string | undefined, lastText: string | undefined,
                 usage: Usage | undefined;
             let settled = false, questionIndex = 0;
             const seenCalls = new Set<string>(), pendingCalls = new Set<Promise<void>>();
             const nativeItems = new Map<string, { tool: string; finished: boolean }>();
+            const streamedCommandItems = new Set<string>();
             const toolAbort = new AbortController(), toolSignal = AbortSignal.any([context.signal, toolAbort.signal]);
             const activeTools = new Set<Promise<unknown>>();
             let resolve!: (result: TaskResult) => void, reject!: (error: Error) => void;
@@ -365,6 +367,11 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                     const active = nativeItems.get(p.item.id);
                     if (m.method === 'item/completed' && active && !active.finished) {
                         active.finished = true;
+                        // Some Codex versions only attach command output to completion.
+                        // When deltas were received, the aggregate is the same output.
+                        if (p.item.type === 'commandExecution' && !streamedCommandItems.has(p.item.id) && typeof p.item.aggregatedOutput === 'string' && p.item.aggregatedOutput) {
+                            context.emit({type: 'progress', message: p.item.aggregatedOutput});
+                        }
                         const failed = ['failed', 'declined'].includes(p.item.status) || (typeof p.item.exitCode === 'number' && p.item.exitCode !== 0);
                         context.emit({
                             type: 'tool_finished',
@@ -375,7 +382,8 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                     }
                 }
                 if (m.method === 'item/completed' && p.item?.type === 'agentMessage' && p.item.phase !== 'commentary' && typeof p.item.text === 'string') lastText = p.item.text;
-                if (m.method === 'item/agentMessage/delta' && typeof p.delta === 'string') context.emit({
+                if (m.method === 'item/commandExecution/outputDelta' && typeof p.itemId === 'string' && typeof p.delta === 'string' && p.delta) streamedCommandItems.add(p.itemId);
+                if (['item/agentMessage/delta', 'item/commandExecution/outputDelta'].includes(m.method ?? '') && typeof p.delta === 'string') context.emit({
                     type: 'progress',
                     message: p.delta
                 });

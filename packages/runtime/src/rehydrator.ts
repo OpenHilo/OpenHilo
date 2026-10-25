@@ -43,7 +43,7 @@ export class Rehydrator {
      * 重建运行状态。
      * @param humanOutput 若 human 节点已挂起，调用者传入的 human 输出 key=value map
      */
-    rehydrate(humanOutput?: Record<string, string>, redeliverHuman = false): RehydrateResult {
+    rehydrate(humanOutput?: Record<string, string>, redeliverHuman = false, retryFailedNode?: string): RehydrateResult {
         const events = this.readJsonl();
 
         if (events.length === 0) {
@@ -54,6 +54,13 @@ export class Rehydrator {
         const lastEvent = events[events.length - 1];
         if (lastEvent.event !== 'suspended_state') {
             return {kind: 'no_suspended_state'};
+        }
+
+        if (retryFailedNode !== undefined) {
+            const boundary = [...events].reverse().find(ev => ['run_failed', 'node_suspended', 'run_resume', 'run_start'].includes(ev.event));
+            if (boundary?.event !== 'run_failed' || boundary.node_run_id !== retryFailedNode) {
+                throw new Error('Failed step changed; reload the run before resuming');
+            }
         }
 
         const suspendedState = lastEvent as Extract<PersistedLogEvent, { event: 'suspended_state' }>;
@@ -73,7 +80,7 @@ export class Rehydrator {
             // Only the current suspension's terminal failure controls replay. Older
             // handled failures must not prevent a later human operation from resuming.
             if (ev.event === 'run_failed') {
-                if (ev.failure?.safeToReplay === false) {
+                if (ev.failure?.safeToReplay === false && retryFailedNode !== ev.node_run_id) {
                     return {kind: 'unsafe_to_replay', nodeRunId: ev.node_run_id, failure: ev.failure};
                 }
                 break;

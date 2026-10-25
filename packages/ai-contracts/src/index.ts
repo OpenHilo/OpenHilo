@@ -8,4 +8,4 @@ export type {
     ExecutionState, ExecutionHealth, ExecutionMonitoring, AnswerReceipt, AiExecution, AiTaskExecutor,
 } from './execution';
 export {ContractError, isJsonValue, validateOutputs, assertCanStart} from './validation';
-export {createTaskExecution, type TaskOperationContext} from './task-execution';
+export {DEFAULT_AI_TIMEOUT_MS, createTaskExecution, type TaskOperationContext} from './task-execution';

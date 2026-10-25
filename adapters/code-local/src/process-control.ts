@@ -55,6 +55,7 @@ export async function readResult(file: string, limit: number): Promise<Buffer> {
 /** One subprocess lifetime shared by shell and Python, including cancellation and pipe cleanup. */
 export async function runProcess(command: string, args: string[], config: {
     workingDir: string; env: NodeJS.ProcessEnv; resultFile?: string;
+    consumeResult?: () => Promise<void>;
 }, options: ReturnType<typeof normalizeOptions>): Promise<CodeExecutionResult> {
     checkCancelled(options.signal);
     const startedAt = new Date().toISOString();
@@ -132,6 +133,9 @@ export async function runProcess(command: string, args: string[], config: {
         });
         child.on('close', async (code, signal) => {
             exitCode = code ?? (signal ? 128 + (os.constants.signals[signal] ?? 0) : 1);
+            // The deadline covers the child and inherited pipes, not host I/O.
+            // Cancellation and group cleanup remain active through result reads.
+            clearTimeout(deadline);
             // Fast writers can exit before the first polling tick. Check again
             // while we still own the process group, so their descendants are
             // also stopped rather than only rejecting the later file read.
@@ -143,6 +147,10 @@ export async function runProcess(command: string, args: string[], config: {
                 } catch (error) {
                     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') stop(error as Error);
                 }
+            }
+            if (!failure && config.consumeResult) {
+                try {await config.consumeResult();}
+                catch (error) {stop(error as Error);}
             }
             closed = true;
             finish();

@@ -132,6 +132,31 @@ verify that only explicitly configured credentials/endpoints are used; ambient
 authentication and endpoint values remain ignored. Standard JSON Schema formats
 are preserved explicitly with ajv-formats and covered by rejection tests.
 
+## Recovery, execution budgets and Code cleanup integration (2026-10-25)
+
+The integration review covered both the active-time/recovery changes and the
+Code cleanup/tuple fixes. The merged Code implementations retain process-group
+ownership during result reads while preserving bounded failed-output diagnostics.
+Host cancellation remains an abort; repairable failures require an explicit retry
+of the current failed invocation. Optional tuple positions and large rest tails
+are checked without recursive growth proportional to the input length.
+
+On macOS arm64, Node 22.23.3 and 24.21.0 each passed 940 Node tests and 105 Jest
+tests, with no skipped tests. Node 24 also passed the build, type checks, package
+boundaries, all twelve package archives, fourteen notice artifacts and all seven
+isolated archive consumers. Consumer installation required registry access;
+the execution tests used offline providers and temporary run data.
+
+Focused regressions verify that AI/Code failures inside nested loops resume
+without repeating completed file effects or earlier Human answers, stale retry
+tokens are rejected, invalid outputs remain diagnostics rather than successful
+values, and user-answer waits do not consume the AI execution budget. Bash and
+Python tests also hold a result read open during cancellation and verify that
+the runtime lock remains held until the read and process cleanup settle.
+Foreground SIGINT forwarding and late result growth with background descendants
+are covered. This integration did not repeat live-provider acceptance or modify
+existing workflow runs. Linux Node 22/24 validation runs in CI for the pushed commit.
+
 ## Limits of these checks
 
 Passing tests does not establish full JavaScript compatibility, arbitrary crash

@@ -435,14 +435,15 @@ export class ExecutionEngine {
                         node_type: node.type, executor: nodeExecutor,
                         error: e.message, on_failure: onFailure,
                         ...(e.aiFailure ? {failure: e.aiFailure} : {}),
+                        ...(e.diagnostics ? {diagnostics: e.diagnostics} : {}),
                     });
                     if (onFailure && onFailure !== 'ABORT') {
                         currentFrame.currentNode = onFailure;
                         continue;
                     }
-                    // ai/human → run_failed（可 resume）；code → run_abort（不可 resume）
+                    // Executor failures retain the same checkpoint used by Human recovery.
                     const executor = nodeExecutor;
-                    if (executor === 'ai' || executor === 'human') {
+                    if (executor === 'ai' || executor === 'human' || executor === 'code') {
                         this.emit({
                             event: 'run_failed', ts: now(), node_run_id: nodeRunId, reason: e.message,
                             ...(e.aiFailure ? {failure: e.aiFailure} : {})
@@ -625,9 +626,17 @@ export class ExecutionEngine {
         if (!executorFn) throw new AbortError(`No executor configured for node: ${node.id}`);
 
         let acceptingEvents = true;
+        let progressBytes = 0;
+        const maxProgressBytes = 200_000;
         const context: ExecutorContext = {
             extensions: JSON.parse(JSON.stringify(this.callStack.at(-1)!.extensions)),
             onAiEvent: event => {
+                if (acceptingEvents && ['progress', 'tool_started', 'tool_finished'].includes(event.type) && progressBytes <= maxProgressBytes) {
+                    const text = event.type === 'progress' ? event.message : event.type === 'tool_started' ? `\n[Tool started: ${event.tool}]\n` : event.type === 'tool_finished' ? `\n[Tool ${event.outcome}: ${event.tool}]\n` : '';
+                    const message = text.slice(0, Math.max(0, maxProgressBytes - progressBytes));
+                    progressBytes += text.length;
+                    this.emit({event: 'ai_progress', ts: now(), node_run_id: nodeRunId, task_id: event.taskId, attempt_id: event.attemptId, sequence: event.sequence, message: message + (progressBytes > maxProgressBytes ? '\n[Output limit reached for this step.]' : '')});
+                }
                 if (acceptingEvents && event.type === 'health') this.emit({
                     event: 'ai_health', ts: now(), node_run_id: nodeRunId,
                     task_id: event.taskId, attempt_id: event.attemptId, sequence: event.sequence, health: event.health

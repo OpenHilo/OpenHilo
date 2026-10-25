@@ -5,6 +5,7 @@ import {
     type Capability,
     ContractError,
     createTaskExecution,
+    DEFAULT_AI_TIMEOUT_MS,
     type ExecutionHost,
     isJsonValue,
     type JsonObject,
@@ -30,6 +31,8 @@ export interface SdkExecutorOptions {
     id?: string;
     profiles: Record<string, ModelProfile>;
     defaultProfile: string;
+    /** Active execution budget excluding user-answer waits; defaults to twelve hours. */
+    timeoutMs?: number;
     maxTurns?: number;
     maxToolCalls?: number;
     maxSessions?: number;
@@ -69,6 +72,7 @@ export class SdkTaskExecutor implements AiTaskExecutor {
     private readonly options: SdkExecutorOptions;
 
     constructor(options: SdkExecutorOptions) {
+        if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 2147483647)) fail('invalid_request', 'Invalid SDK timeout');
         if (options.id !== undefined && (typeof options.id !== 'string' || !options.id.trim() || options.id !== options.id.trim())) fail('invalid_request', 'SDK executor identity must be a nonempty trimmed string');
         this.id = options.id ?? 'openhilo.ai-sdk';
         this.options = {
@@ -123,7 +127,8 @@ export class SdkTaskExecutor implements AiTaskExecutor {
             version: 1,
             opaqueId: sessionId, ...(host.workspace ? {workspaceId: host.workspace.id} : {})
         };
-        const execution = createTaskExecution(task, host, async context => {
+        const deadlineAt = new Date(Math.min(Date.now() + (this.options.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS), host.deadlineAt ? Date.parse(host.deadlineAt) : Infinity)).toISOString();
+        const execution = createTaskExecution(task, {...host, deadlineAt}, async context => {
             let effects = false;
             let usage: Usage | undefined;
             let allInputUsage = true;

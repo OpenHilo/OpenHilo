@@ -75,7 +75,10 @@ This is safe Human-point recovery, not arbitrary crash recovery.
 EOF or Ctrl+C at the Human prompt also leaves its request suspended. Run resume
 with the printed path to continue. Ctrl+C during AI asks the executor to stop and
 waits for its authoritative result; it does not promise rollback of effects.
-Local Code has no general timeout/cancellation or isolation guarantee.
+Ctrl+C also cancels local Code through the host's AbortSignal and waits for
+process-group cleanup. This example does not configure a Code deadline; hosts
+can opt into one with `createCodeExecutor` options. Cancellation does not undo
+earlier writes, and local Code is not an isolation sandbox.
 
 The source files, compiled graph and maps are in `artifacts/`; all snapshots and
 Human receipts are under the printed run directory. `ai-attempts.jsonl` records

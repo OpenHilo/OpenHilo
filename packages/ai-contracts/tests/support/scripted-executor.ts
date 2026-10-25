@@ -2,6 +2,7 @@ import {
     type AiExecution,
     type AiTaskExecutor,
     assertCanStart,
+    DEFAULT_AI_TIMEOUT_MS,
     type Capability,
     ContractError,
     type EventPayload,
@@ -38,7 +39,8 @@ export class ScriptedExecutor implements AiTaskExecutor {
         let pending: Question | undefined;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let advanceQueued = false;
-        const deadline = host.deadlineAt === undefined ? undefined : Date.parse(host.deadlineAt);
+        let deadline = host.deadlineAt === undefined ? Date.now() + DEFAULT_AI_TIMEOUT_MS : Date.parse(host.deadlineAt);
+        let pausedAt = 0;
         const asked = new Set<string>();
         const answered = new Set<string>();
         let settle!: (outcome: TaskResult) => void;
@@ -80,12 +82,13 @@ export class ScriptedExecutor implements AiTaskExecutor {
             finish({status: 'cancelled', reason});
         };
         const expired = (): boolean => {
-            if (deadline === undefined || Date.now() < deadline) return false;
+            if (pending || Date.now() < deadline) return false;
             fail('timeout', 'Deadline exceeded');
             return true;
         };
         const armDeadline = (): void => {
-            if (closed() || deadline === undefined || expired()) return;
+            if (timer !== undefined) clearTimeout(timer);
+            if (closed() || pending || expired()) return;
             // Re-arm long waits so native timer overflow cannot turn a future deadline into 1ms.
             timer = setTimeout(armDeadline, Math.min(deadline - Date.now(), 2_147_483_647));
         };
@@ -117,6 +120,8 @@ export class ScriptedExecutor implements AiTaskExecutor {
                     }
                     asked.add(step.question.id);
                     pending = step.question;
+                    pausedAt = Date.now();
+                    armDeadline();
                     state = 'waiting_for_input';
                     emit({type: 'question', question: pending});
                     return;
@@ -149,7 +154,9 @@ export class ScriptedExecutor implements AiTaskExecutor {
                 if (!isJsonValue(value) || (pending.answer === 'text' && typeof value !== 'string')) return 'invalid_answer';
                 if (pending.optionsMode === 'exclusive' && !pending.options?.some(option => option.value === value)) return 'invalid_answer';
                 answered.add(questionId);
+                deadline += Math.max(0, Date.now() - pausedAt);
                 pending = undefined;
+                armDeadline();
                 state = 'running';
                 emit({type: 'answered', questionId});
                 scheduleAdvance();

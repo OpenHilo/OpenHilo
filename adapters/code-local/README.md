@@ -65,18 +65,26 @@ characters split across pipe chunks are decoded correctly.
 Timeout, cancellation and output-limit failures reject with `CodeProcessError`,
 an `AbortError` subclass. Its `reason` is `timeout`, `cancelled`, `output_limit`
 or `result_limit`. Bounded `stdout` and `stderr` are diagnostics only; no typed
-business outputs are returned from a stopped task. Runtime marks the Code run
-`aborted` and does not automatically replay it. This differs from a script's
+business outputs are returned from a stopped task. The low-level process API retains this error type. `createCodeExecutor` adapts repairable
+execution and output-validation errors to a checkpointed runtime failure requiring an
+explicit retry; host cancellation still aborts. Failed-attempt diagnostics include bounded
+stdout/stderr, exit code and available unvalidated output fields. No automatic replay occurs. This differs from a script's
 ordinary nonzero exit, which remains `exit_code` data. Termination does not roll
 back filesystem writes, network requests or other effects already performed.
 
 On macOS/Linux, tasks run in a separate process group. Stops send SIGTERM to the
 group, then SIGKILL after the grace period, including descendants whose parent
-has exited. The promise settles after the direct child closes, escalation has
-finished and protocol files have been removed; Runtime retains its lock until
+has exited. Group cleanup and cancellation remain active during the bounded
+result-file read, including limits discovered after the direct child exits.
+The promise settles after the direct child closes, result reading and escalation
+have finished and protocol files have been removed; Runtime retains its lock until
 that cleanup settles. Timers and abort listeners are removed after each call.
 Descendants that deliberately create another session/process group escape this
 mechanism; Windows process-tree termination is not guaranteed or verified.
+
+Because Code uses a separate process group, terminal SIGINT does not reach it
+automatically. Hosts must forward their cancellation signal through the `signal`
+option. The shared interactive example host does this for Ctrl+C.
 
 The result file is size-monitored while the subprocess runs and read with a
 bounded reader after exit. Monitoring is not an OS disk quota and may overshoot

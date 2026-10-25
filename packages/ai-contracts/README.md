@@ -74,13 +74,13 @@ and emits health with `stopReason`. `cancel()` and `result` still wait for real 
 a noncooperative tool retains its resource/session ownership. An observer can act on
 stopping/stalled telemetry without waiting for `cancel()` to resolve. Do not implement
 a timeout by pretending effects ended or by automatically replaying the task.
-`deadlineAt` controls cancellation; monitoring thresholds alone never cancel or retry.
-When set, health also includes the absolute `deadlineAt` so callers can display the
-remaining time. This deadline includes human waiting; expiry closes unanswered
-questions and reports a specific timeout explanation. A countdown reaching zero
-is not a terminal result: cleanup must still settle before completion is reported.
-The result and terminal event remain the only authoritative completion signals.
-After terminal, the helper clears timers and `execution.health` is undefined.
+The default active execution budget is twelve hours. An explicit host `deadlineAt`
+sets the initial budget; adapters can also accept a configured timeout. Pending
+user questions pause that budget until all questions are answered. Monitoring
+thresholds alone never cancel or retry. Health exposes `activeElapsedMs` and
+`remainingMs`; the projected `deadlineAt` is omitted while waiting and moves
+forward after the answer. Manual cancellation remains available during waits.
+Timeouts settle explicitly and never authorize automatic replay.
 
 A heartbeat shows that the host event loop can run, not that the remote model is
 making progress. Consumers should independently detect stale `observedAt` snapshots

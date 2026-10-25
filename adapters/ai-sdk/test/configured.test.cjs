@@ -2,17 +2,21 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {createSdkTaskExecutor} = require('../dist');
 
-for (const provider of ['openai', 'anthropic']) {
-    test(`${provider}: configured factory uses explicit credentials and ignores ambient SDK endpoint/auth defaults`, async () => {
+for (const provider of ['openai', 'anthropic']) for (const timeoutMs of [undefined, 120000]) {
+    test(`${provider} timeout ${timeoutMs ?? 'default'}: configured factory uses explicit credentials and ignores ambient SDK endpoint/auth defaults`, async () => {
         const names = ['OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
         const before = Object.fromEntries(names.map(name => [name, process.env[name]]));
         const originalFetch = globalThis.fetch;
+        const originalTimer = globalThis.setTimeout;
+        const timers = [];
+        globalThis.setTimeout = (fn, delay, ...args) => { timers.push(delay); return originalTimer(fn, delay, ...args); };
         for (const name of names) process.env[name] = name.endsWith('URL') ? 'https://must-not-contact.invalid' : 'ambient-value';
         let calls = 0;
         globalThis.fetch = async (url, init) => {
             calls++;
             assert.equal(String(url), provider === 'openai' ? 'https://api.openai.com/v1/responses' : 'https://api.anthropic.com/v1/messages');
             const headers = new Headers(init.headers);
+            if (provider === 'anthropic') assert.equal(Number(headers.get('x-stainless-timeout')), (timeoutMs ?? 43200000) / 1000);
             assert.equal(headers.get('openai-organization'), null);
             assert.equal(headers.get('openai-project'), null);
             // Anthropic SDK 1.x also sends an explicitly supplied API key as
@@ -47,7 +51,7 @@ for (const provider of ['openai', 'anthropic']) {
                     model: 'fixture-model',
                     apiKey: 'explicit-offline-key'
                 }
-            }, 'primary');
+            }, 'primary', {timeoutMs});
             assert.equal(calls, 0);
             const execution = await executor.start({
                     version: 1,
@@ -64,9 +68,13 @@ for (const provider of ['openai', 'anthropic']) {
             const result = await execution.result;
             assert.equal(result.status, 'completed', JSON.stringify(result));
             assert.equal(calls, 1);
+            const budget = timeoutMs ?? 43200000;
+            assert.ok(timers.filter(delay => delay > budget - 1000 && delay <= budget).length >= 2,
+                'Both the execution and HTTP transport must use the configured budget: ' + timers.join(','));
             await executor.releaseSession(result.session);
         } finally {
             globalThis.fetch = originalFetch;
+            globalThis.setTimeout = originalTimer;
             for (const name of names) {
                 if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name];
             }

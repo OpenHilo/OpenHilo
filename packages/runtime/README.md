@@ -170,8 +170,9 @@ repair tool for arbitrary edited run files. See [compatibility](../../docs/compa
 
 ## AI health and safe recovery
 
-The dispatcher supplies a 20-minute deadline unless `aiHost` supplies its own;
-adapters may enforce a shorter deadline (Codex defaults to five minutes).
+The dispatcher adds no hidden deadline. Built-in executors default to twelve active
+hours; configure the adapter timeout or an explicit `aiHost.deadlineAt` to override it.
+Waiting for user answers does not consume the execution budget.
 `aiHost` can set `monitoring` thresholds and observe task events. The engine forwards
 health through `ExecutorContext.onAiEvent` into `ai_health` execution log events and
 `RunComposition.onEvent`, correlated with node execution, task and attempt IDs.
@@ -179,13 +180,26 @@ Applications can forward these events to their own UI or logs. While a noncooper
 effect drains, the run remains running with explicit stopping/stalled AI health.
 Resources are not released on a timer alone.
 
-Structured AI failures retain `failure` metadata in `node_failed` and `run_failed`.
-`resumeRun` rejects `safeToReplay: false` before acquiring a lock or constructing
-executor resources. Cancellation, unconfirmed results and post-acceptance output
-errors are conservatively non-replayable. Legacy failures without this metadata
-retain explicit-resume compatibility; this is not a claim that their effects are
-safe. Explicit workflow `on_failure` branches retain their semantics; authors must
-not route uncertain effects into an automatic repeat of the same operation.
+Structured executor failures retain `failure` metadata in `node_failed` and `run_failed`.
+AI, Human and Code executor failures save the current frame stack as `suspended_state`.
+`resumeRun` restores that checkpoint, including loop positions and variables; completed
+steps and earlier Human answers are not executed again. The run uses its saved workflow
+snapshot and original workdir. Fixing a script or input file in that workdir can therefore
+repair the failed step; editing a library workflow does not silently replace the snapshot.
+
+By default, `resumeRun` rejects `safeToReplay: false` before taking ownership or creating
+resources. After the user reviews possible partial effects, pass `retryFailedNode` with
+the current `run_failed.node_run_id` to explicitly retry that invocation. This token is
+checked again under the run lock: stale requests, completed runs and concurrent workers
+cannot replay later work. Automatic callers must never infer this user authorization.
+Manual cancellation remains an abort. A crash or legacy abort without a final usable
+checkpoint is not recoverable through this mechanism.
+
+Provider messages and tool activity are recorded as `ai_progress` events. Output is bounded
+per invocation (200,000 characters) and never contains synthesized progress or private
+reasoning. Code validation failures can include bounded `diagnostics` (stdout, stderr,
+exitCode and serialized rawOutputs). These are unvalidated evidence, never workflow values.
+Explicit `on_failure` branches retain their existing routing semantics.
 
 ## Human adapters and durable results
 

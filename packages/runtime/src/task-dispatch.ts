@@ -73,7 +73,6 @@ export async function dispatchAiTask(
             attemptId: randomUUID(), ...(options.runId ? {runId: options.runId} : {}), nodeId: node.id,
             workspace: {id: path.resolve(options.workdir), uri: pathToFileURL(path.resolve(options.workdir)).href},
             signal: new AbortController().signal,
-            deadlineAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
             ...suppliedHost,
             onEvent(event) {
                 // A progress observer must not replace the unanswered-question guard.

@@ -458,3 +458,33 @@ test('malformed native call IDs are rejected before any host handler runs', asyn
     assert.equal(result.error.code, 'invalid_output');
     assert.equal(calls, 0);
 });
+
+for (const provider of ['openai', 'anthropic']) {
+    test(`${provider}: configured active budget pauses for a question and resumes once`, async () => {
+        let resolveQuestion;
+        const question = new Promise(resolve => { resolveQuestion = resolve; });
+        const h = harness(provider, [[call('ask', 'ask_user', {prompt: 'Continue?', answer: 'text'})], finish()], {timeoutMs: 500});
+        const execution = await h.executor.start(request(), host({onEvent(event) { if (event.type === 'question') resolveQuestion(event.question); }}));
+        const q = await question;
+        const remaining = execution.health.remainingMs;
+        await new Promise(resolve => setTimeout(resolve, 600));
+        assert.equal(execution.state, 'waiting_for_input');
+        assert.equal(execution.health.remainingMs, remaining);
+        assert.equal(await execution.answer(q.id, 'yes'), 'accepted');
+        assert.equal((await execution.result).status, 'completed');
+        assert.equal(h.calls(), 2);
+    });
+    test(`${provider}: active timeout aborts the pending HTTP call without replay`, async () => {
+        let aborted = false;
+        const h = harness(provider, [async (_body, init) => {
+            await new Promise((resolve, reject) => init.signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }, {once: true}));
+        }], {timeoutMs: 100});
+        const execution = await h.executor.start(request(), host());
+        const result = await execution.result;
+        assert.equal(result.status, 'failed');
+        assert.equal(result.error.code, 'timeout');
+        assert.equal(result.error.safeToReplay, false);
+        assert.equal(aborted, true);
+        assert.equal(h.calls(), 1);
+    });
+}

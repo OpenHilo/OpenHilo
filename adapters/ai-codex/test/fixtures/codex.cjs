@@ -65,6 +65,18 @@ readline.createInterface({input: process.stdin}).on('line', line => {
             const profile = {title: 'Example', labels: {category: 'notes'}};
             return finish(scenario === 'raw-profile' ? profile : {profile, classification: profile});
         }
+        if (scenario === 'native-output') {
+            for (const id of ['aggregate', 'streamed']) {
+                const item = {id, type:'commandExecution', status:'inProgress'};
+                note('item/started', {threadId, turnId, item});
+                if (id === 'streamed') note('item/commandExecution/outputDelta', {threadId, turnId, itemId:id, delta:'STREAMED\n'});
+                note('item/commandExecution/outputDelta', {threadId, turnId:'other-turn', itemId:id, delta:'FOREIGN'});
+                const completed = {...item, status:'completed', exitCode:0, aggregatedOutput:id==='aggregate'?'AGGREGATED\n':'STREAMED\n'};
+                note('item/completed', {threadId, turnId, item:completed});
+                note('item/completed', {threadId, turnId, item:completed});
+            }
+            return finish();
+        }
         if (scenario === 'native-tools') {
             const command = {
                 id: 'native-command',

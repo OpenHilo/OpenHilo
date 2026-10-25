@@ -16,7 +16,7 @@ function createExecutor(file, env = process.env) {
         if (!apiKey?.trim()) throw new Error('Missing SDK credential environment variable for configured route');
         return [name,{provider:p.provider,model:p.model,apiKey,baseURL:p.base_url,maxOutputTokens:p.max_output_tokens}];
       }));
-      executor = createSdkTaskExecutor(profiles,c.default_profile);
+      executor = createSdkTaskExecutor(profiles,c.default_profile,{timeoutMs:c.timeout_ms});
     }
     return {executor,identity:c};
   });

@@ -125,7 +125,7 @@ test('cancel waits for process cleanup and emits one terminal', async t => {
     assert.equal((await e.result).status, 'cancelled');
     assert.equal(s.events.filter(e => e.type === 'terminal').length, 1);
 });
-test('default timeout bounds an unresponsive task', async t => {
+test('configured timeout bounds an unresponsive task', async t => {
     const s = setup(t, 'hang', {}, {timeoutMs: 100});
     const r = await (await s.executor.start(s.request, s.host)).result;
     assert.equal(r.status, 'failed');
@@ -409,4 +409,34 @@ test('rejects pre-namespace session hashes even with the same custom executor ID
     const before = s.events.length;
     await assert.rejects(s.executor.start({...s.request, continuation}, s.host), /configuration do not match/);
     assert.equal(s.events.length, before, 'must reject before an execution or model request');
+});
+
+test('waiting for an answer can exceed the configured budget and still finish once', async t => {
+    const s = setup(t, 'question', {}, {timeoutMs: 1000});
+    const e = await s.executor.start(s.request, s.host);
+    const until = Date.now() + 3000;
+    while (!s.events.some(x => x.type === 'question') && Date.now() < until) await new Promise(r => setTimeout(r, 10));
+    const q = s.events.find(x => x.type === 'question');
+    assert.ok(q);
+    const remaining = e.health.remainingMs;
+    await new Promise(r => setTimeout(r, 1100));
+    assert.equal(e.state, 'waiting_for_input');
+    assert.equal(e.health.remainingMs, remaining);
+    assert.equal(await e.answer(q.question.id, 'resumed'), 'accepted');
+    assert.equal((await e.result).outputs.answer, 'resumed');
+    assert.equal(s.events.filter(x => x.type === 'terminal').length, 1);
+});
+test('omitting the adapter timeout supplies twelve hours, without a five-minute cap', async t => {
+    const s = setup(t, 'hang', {}, {timeoutMs: undefined});
+    const e = await s.executor.start(s.request, s.host);
+    assert.ok(e.health.remainingMs > 43_190_000);
+    assert.ok(e.health.remainingMs <= 43_200_000);
+    await e.cancel('test complete');
+    assert.equal((await e.result).status, 'cancelled');
+});
+
+test('command stdout supports delta and completion-only providers without duplicates or foreign-turn output',async t=>{
+ const s=setup(t,'native-output');
+ assert.equal((await (await s.executor.start(s.request,s.host)).result).status,'completed');
+ assert.equal(s.events.filter(e=>e.type==='progress').map(e=>e.message).join(''),'AGGREGATED\nSTREAMED\n');
 });

@@ -1,6 +1,7 @@
 import {
     type AiExecution,
     ContractError,
+    createTaskExecution,
     type ExecutionHost,
     type Failure,
     type JsonValue,
@@ -125,7 +126,7 @@ test('expired deadlines settle without running script steps', async () => {
     expect(x.events.map(event => event.type)).toEqual(['terminal']);
 });
 
-test('deadline expires while waiting and timers/listeners are cleaned', async () => {
+test('deadline pauses while waiting and timers/listeners are cleaned after answering', async () => {
     jest.useFakeTimers({doNotFake: ['queueMicrotask']});
     try {
         const x = input();
@@ -134,8 +135,9 @@ test('deadline expires while waiting and timers/listeners are cleaned', async ()
         const execution = await new ScriptedExecutor([question, complete]).start(x.request, x.host);
         expect(execution.state).toBe('waiting_for_input');
         jest.advanceTimersByTime(100);
-        expect(await execution.result).toMatchObject({status: 'failed', error: {code: 'timeout'}});
-        expect(await execution.answer('q1', 'yes')).toBe('closed');
+        expect(execution.state).toBe('waiting_for_input');
+        expect(await execution.answer('q1', 'yes')).toBe('accepted');
+        expect(await execution.result).toMatchObject({status: 'completed'});
         expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
         expect(jest.getTimerCount()).toBe(0);
         x.controller.abort('later');
@@ -161,16 +163,20 @@ test.each(['complete', 'cancel'] as const)('%s clears future deadline timer and 
     }
 });
 
-test('far-future deadlines do not overflow the native timer', async () => {
+test('far-future active deadlines do not overflow the native timer', async () => {
     jest.useFakeTimers({doNotFake: ['queueMicrotask']});
     try {
         const x = input();
         x.host.deadlineAt = new Date(Date.now() + 3_000_000_000).toISOString();
-        const execution = await new ScriptedExecutor([question, complete]).start(x.request, x.host);
-        expect(execution.state).toBe('waiting_for_input');
-        jest.advanceTimersByTime(2_147_483_647);
-        expect(execution.state).toBe('waiting_for_input');
-        jest.advanceTimersByTime(3_000_000_000 - 2_147_483_647);
+        x.host.monitoring = {heartbeatMs: 2_000_000_000};
+        const execution = createTaskExecution(x.request, x.host, async ctx => {
+            await new Promise<void>(resolve => ctx.signal.addEventListener('abort', () => resolve(), {once: true}));
+            return {status: 'cancelled', reason: 'stopped'};
+        });
+        await new Promise<void>(resolve => queueMicrotask(resolve));
+        await jest.advanceTimersByTimeAsync(2_147_483_647);
+        expect(execution.state).toBe('running');
+        await jest.advanceTimersByTimeAsync(3_000_000_000 - 2_147_483_647);
         expect(await execution.result).toMatchObject({status: 'failed', error: {code: 'timeout'}});
         expect(jest.getTimerCount()).toBe(0);
     } finally {

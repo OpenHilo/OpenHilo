@@ -194,21 +194,26 @@ export async function executeCode(config: CodeExecutorConfig): Promise<TaskResul
     const temporary = outputKeys.length ? await fsPromises.mkdtemp(path.join(os.tmpdir(), 'itt_bash_')) : undefined;
     const outFilePath = temporary ? path.join(temporary, 'output') : undefined;
     let result: TaskResult | undefined;
+    let outData: Buffer | undefined;
+    let rawDiagnostic: unknown;
     try {
         result = await runProcess(interpreter, ['-c', prologue ? prologue + '\n' + config.command : config.command], {
             workingDir: config.workingDir,
             env: {...process.env, ...config.envVars, ...(outFilePath ? {_ITT_OUT: outFilePath} : {})},
             resultFile: outFilePath,
+            consumeResult: outFilePath ? async () => {
+                try {outData = await readResult(outFilePath, options.maxResultBytes);}
+                catch (error) {
+                    if (error instanceof CodeProcessError) throw error;
+                    // Missing/invalid protocol errors are reported below with
+                    // the completed process's exit code and stderr diagnostics.
+                }
+            } : undefined,
         }, options);
         if (!outFilePath) return result;
-        let outData: Buffer;
-        try {
-            outData = await readResult(outFilePath, options.maxResultBytes);
-        } catch (error) {
-            if (error instanceof CodeProcessError) throw error;
-            throw new AbortError(`code output '${outputKeys[0]}' not set`);
-        }
+        if (!outData) throw new AbortError(`code output '${outputKeys[0]}' not set`);
         const rawOutputs = parseBashOutputFile(outData);
+        rawDiagnostic = rawOutputs;
         result.typedOutputs = [];
         for (const [name, declaredType] of Object.entries(declaredOutputs)) {
             const raw = Object.prototype.hasOwnProperty.call(rawOutputs, name) ? rawOutputs[name] : null;
@@ -216,14 +221,22 @@ export async function executeCode(config: CodeExecutorConfig): Promise<TaskResul
         }
         return result;
     } catch (error) {
-        annotateFailure(error, result);
+        annotateFailure(error, result, rawDiagnostic);
         throw error;
     } finally {
         if (temporary) await fsPromises.rm(temporary, {recursive: true, force: true});
     }
 }
 
-function annotateFailure(error: unknown, result?: TaskResult): void {
+function annotateFailure(error: unknown, result?: TaskResult, rawOutputs?: unknown): void {
+    if (error instanceof Error) {
+        const stdout = result?.text ?? (error instanceof CodeProcessError ? error.stdout : '');
+        const stderr = result?.stderr ?? (error instanceof CodeProcessError ? error.stderr : '');
+        const raw = rawOutputs === undefined ? undefined : JSON.stringify(rawOutputs);
+        Object.assign(error, {diagnostics: {stdout: stdout.slice(-16000), stderr: stderr.slice(-16000),
+            ...(result ? {exitCode: result.exitCode} : {}), ...(raw !== undefined ? {rawOutputs: raw.slice(0,64000)} : {}),
+            truncated: stdout.length > 16000 || stderr.length > 16000 || (raw?.length ?? 0) > 64000}});
+    }
     if (!result) return;
     if (error instanceof CodeProcessError) {error.stdout = result.text; error.stderr = result.stderr;}
     if (error instanceof Error && result.exitCode !== 0) {
@@ -311,6 +324,8 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
     const scriptFilePath = path.join(temporary, 'script.py');
     const outputFilePath = path.join(temporary, 'output.json');
     let result: TaskResult | undefined;
+    let outputData: Buffer | undefined;
+    let rawDiagnostic: unknown;
     try {
         await fsPromises.writeFile(inputFilePath, JSON.stringify(inputs), 'utf8');
         await fsPromises.writeFile(scriptFilePath, script, 'utf8');
@@ -318,17 +333,26 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
             workingDir, resultFile: Object.keys(declaredOutputs).length ? outputFilePath : undefined,
             env: {...process.env, _ITT_INPUT: inputFilePath, _ITT_SCRIPT_FILE: scriptFilePath,
                 _ITT_OUTPUT: outputFilePath, _ITT_DECLARED_KEYS: JSON.stringify(Object.keys(declaredOutputs))},
+            consumeResult: Object.keys(declaredOutputs).length ? async () => {
+                try {outputData = await readResult(outputFilePath, options.maxResultBytes);}
+                catch (error) {
+                    if (error instanceof CodeProcessError) throw error;
+                    // Preserve the existing missing-output diagnostic below.
+                }
+            } : undefined,
         }, options);
         result.typedOutputs = [];
         // Ordinary exceptions and signals remain exit-code data for stream-only tasks.
         if (Object.keys(declaredOutputs).length === 0) return result;
         let outputJson: {outputs: Record<string, unknown>; not_serialisable: string[]};
         try {
-            outputJson = JSON.parse((await readResult(outputFilePath, options.maxResultBytes)).toString('utf8'));
+            if (!outputData) throw new Error('Missing output protocol');
+            outputJson = JSON.parse(outputData.toString('utf8'));
         } catch (error) {
             if (error instanceof CodeProcessError) throw error;
             throw new AbortError(`code output '${Object.keys(declaredOutputs)[0]}' not set`);
         }
+        rawDiagnostic = outputJson;
         for (const [name, declaredType] of Object.entries(declaredOutputs)) {
             const isNotSerialisable = outputJson.not_serialisable.includes(name);
             const hasValue = Object.prototype.hasOwnProperty.call(outputJson.outputs, name);
@@ -337,7 +361,7 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
         }
         return result;
     } catch (error) {
-        annotateFailure(error, result);
+        annotateFailure(error, result, rawDiagnostic);
         throw error;
     } finally {
         await fsPromises.rm(temporary, {recursive: true, force: true});

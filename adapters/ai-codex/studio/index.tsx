@@ -50,7 +50,7 @@ function CodexSettings({config, onChange, onValidityChange}: Props) {
                                                              onChange={e => update({codex_home: e.target.value || undefined})}/></label>
         <label className="block">Codex timeout (milliseconds)<input className={inputClass} type="number" min="1"
                                                                     max="2147483647" value={selected.timeout_ms ?? ''}
-                                                                    placeholder="300000"
+                                                                    placeholder="43200000"
                                                                     onChange={e => update({timeout_ms: e.target.value ? Number(e.target.value) : undefined})}/></label>
         {error && <p role="alert">{error}</p>}
     </div>;

@@ -50,3 +50,34 @@ test('special property names are data and unknown remains explicitly unstructure
   assert.deepEqual(parseRunInputs({context:JSON.stringify(input)},schema,'typed-text-v1').context,input);
   assert.equal(schema.context.shape.properties.data.shape.type,'json');
 });
+
+test('optional tuple slots keep their positions, including before a rest tail', async () => {
+  for (const parser of [parseRunInputs, (await import('@openhilo/itt-contracts/run-inputs')).parseRunInputs]) {
+    for (const [type, valid, invalid] of [
+      ['[number?,string?]', [[],[1],[1,'second']], [['wrong'],['wrong','second'],[1,2]]],
+      ['[number?,...string[]]', [[],[1],[1,'a','b']], [['wrong'],['a','b'],[1,2]]],
+    ]) {
+      const schema = contract(type);
+      for (const value of valid) assert.deepEqual(parser({context:JSON.stringify(value)},schema,'typed-text-v1').context,value);
+      for (const value of invalid) assert.throws(() => parser({context:JSON.stringify(value)},schema,'typed-text-v1'), /tuple items/);
+    }
+  }
+});
+
+test('large rest tuples validate without recursive stack growth and retain suffix constraints', async () => {
+  const numbers = Array(20000).fill(1);
+  for (const parser of [parseRunInputs, (await import('@openhilo/itt-contracts/run-inputs')).parseRunInputs]) {
+    for (const type of ['number[]', '[...number[]]', '[...number[],string]']) {
+      const schema = contract(type), suffix = type.endsWith(',string]');
+      const valid = suffix ? [...numbers,'end'] : numbers;
+      assert.deepEqual(parser({context:JSON.stringify(valid)},schema,'typed-text-v1').context,valid);
+      const invalid = [...valid]; invalid[10000] = false;
+      assert.throws(() => parser({context:JSON.stringify(invalid)},schema,'typed-text-v1'), error => error.name === 'RunInputError');
+      if (suffix) {
+        for (const invalidSuffix of [numbers,[...numbers,false],[...numbers,'end',1]]) {
+          assert.throws(() => parser({context:JSON.stringify(invalidSuffix)},schema,'typed-text-v1'), /tuple items/);
+        }
+      }
+    }
+  }
+});

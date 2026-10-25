@@ -185,7 +185,7 @@ function createResources(context, {provider, deferHuman = false, aiExecutor: sup
         executor: createDispatcher({
             runId: context.runId,
             workdir: context.workdir,
-            codeExecutor: createCodeExecutor(context.workdir),
+            codeExecutor: createCodeExecutor(context.workdir, {signal: controller.signal}),
             aiExecutor,
             aiHost: () => ({
                 signal: controller.signal,

@@ -124,3 +124,9 @@ or import a domain application.
 
 The direct source examples are experimental: official-SDK protocol fixtures pass for both providers; paid online model
 acceptance is pending. They are not included inside this package tarball.
+
+Execution defaults to 12 active hours. Set `timeoutMs` in executor/factory options
+(or `timeout_ms` in SDK deployment configuration) to override it. Pending user
+questions pause this budget. Factory-owned SDK clients use the same request
+timeout and cancellation signal; caller-supplied clients may have their own
+network settings. Manual stop remains available, with no automatic replay.

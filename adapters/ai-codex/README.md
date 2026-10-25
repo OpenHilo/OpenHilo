@@ -16,7 +16,7 @@ const executor = new CodexTaskExecutor({
   cliPath: 'codex', // executable name on PATH or explicit path; never a shell command
   effort: 'low',
   sandbox: 'workspace-write',
-  timeoutMs: 300000,
+  timeoutMs: 43200000,
 });
 // Supply executor as aiExecutor to createDispatcher from @openhilo/runtime/dispatcher.
 ```
@@ -30,7 +30,7 @@ An embedding application can validate this serializable selection with
   "cli_path": "codex",
   "effort": "low",
   "sandbox": "workspace-write",
-  "timeout_ms": 300000
+  "timeout_ms": 43200000
 }
 ```
 
@@ -92,3 +92,8 @@ CLI process has exited. No automatic replay or implied rollback is performed.
 The adapter checks protocol compatibility rather than restricting CLI version numbers. Small live acceptance covered direct approval
 and a multi-process revision/resume journey; ordinary package tests use protocol fixtures. The CLI and login must be
 installed/configured separately.
+
+`timeoutMs` / `timeout_ms` defaults to 43,200,000 ms (12 hours) of active execution.
+Waiting for answers pauses this budget. Manual cancellation still interrupts the
+owned process; timeout or cancellation does not automatically replay work. An
+explicit host deadline can further restrict the initial budget.

@@ -2,6 +2,8 @@ import type {JsonValue, TaskRequest, TaskResult} from './data';
 import type {AiExecution, EventPayload, ExecutionHealth, ExecutionHost, ExecutionState, Question} from './execution';
 import {ContractError, isJsonValue, resolveMonitoring, validateOutputs} from './validation';
 
+export const DEFAULT_AI_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+
 // Contract data is JSON; reconstruct in this realm (including VM/Jest consumers).
 const copyJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -73,7 +75,9 @@ export function createTaskExecution(
         return {
             phase: currentPhase, condition, elapsedMs: Math.max(0, now - startedAt), idleMs,
             phaseElapsedMs, activeTools: activeTools.size, stalledTools, observedAt: new Date(now).toISOString(),
-            heartbeatMs: monitoring.heartbeatMs, ...(host.deadlineAt ? {deadlineAt: host.deadlineAt} : {}),
+            heartbeatMs: monitoring.heartbeatMs, activeElapsedMs: activeMs,
+            remainingMs: Math.max(0, budgetMs - activeMs),
+            ...(pending.size ? {} : {deadlineAt: new Date(startedAt + budgetMs + waitingMs).toISOString()}),
             ...(stopReason ? {stopReason} : {})
         };
     };
@@ -84,7 +88,8 @@ export function createTaskExecution(
     const result = new Promise<TaskResult>(resolve => {
         resolveResult = resolve;
     });
-    const deadline = host.deadlineAt === undefined ? undefined : Date.parse(host.deadlineAt);
+    // deadlineAt sets the initial active-time budget, not a wall-clock limit on user replies.
+    const budgetMs = host.deadlineAt === undefined ? DEFAULT_AI_TIMEOUT_MS : Date.parse(host.deadlineAt) - startedAt;
     const emit = (payload: EventPayload): void => {
         try {
             host.onEvent(copyJson({
@@ -118,15 +123,13 @@ export function createTaskExecution(
             clearTimeout(timer);
             timer = undefined;
         }
-        if (terminal || stopped || deadline === undefined) return;
-        const remaining = deadline - Date.now();
+        if (terminal || stopped || pending.size) return;
+        const remaining = startedAt + budgetMs + waitingMs - Date.now();
         if (remaining <= 0) {
             stop({
                 status: 'failed', error: {
                     code: 'timeout',
-                    message: pending.size
-                        ? 'The AI attempt deadline expired while waiting for your answer. This attempt has stopped; late answers cannot be accepted.'
-                        : 'The AI attempt deadline expired before completion was confirmed.',
+                    message: 'The AI execution time budget expired before completion was confirmed (time waiting for answers is excluded).',
                     retryable: false,
                     safeToReplay: false
                 }
@@ -164,8 +167,10 @@ export function createTaskExecution(
             state = pending.size ? 'waiting_for_input' : 'running';
             lastProgressAt = Date.now();
             refreshPhase();
+            armDeadline();
             entry.resolve(copyJson(value));
             emit({type: 'answered', questionId: id});
+            emit({type: 'health', health: health()});
             return 'accepted';
         },
     };
@@ -208,6 +213,7 @@ export function createTaskExecution(
                         emit(event);
                     },
                     ask(question, toolCallId) {
+                        armDeadline();
                         if (terminal || stopped) return Promise.reject(new Error('Execution stopped'));
                         if (!isJsonValue(question) || !question.id?.trim() || !question.prompt?.trim() ||
                             !['text', 'json'].includes(question.answer) || asked.has(question.id) ||
@@ -229,10 +235,13 @@ export function createTaskExecution(
                         state = 'waiting_for_input';
                         lastProgressAt = Date.now();
                         refreshPhase();
+                        armDeadline();
                         emit({type: 'question', question: copy});
+                        emit({type: 'health', health: health()});
                         return answer;
                     },
                 });
+                armDeadline();
                 if (!isJsonValue(outcome) || !outcome || typeof outcome !== 'object' ||
                     !['completed', 'failed', 'cancelled'].includes(outcome.status)) {
                     throw new Error('Operation returned an invalid terminal result');

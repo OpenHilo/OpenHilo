@@ -73,7 +73,9 @@ export interface ResumeRunOpts extends RunComposition {
     runDir: string;
     humanSubmission?: HumanSubmission;
     humanOutput?: Record<string, string>;
-    humanNodeRunId?: string
+    humanNodeRunId?: string;
+    /** Explicit user retry of this failed invocation; never inferred for automatic replay. */
+    retryFailedNode?: string;
 }
 
 export interface StartRunResult {
@@ -163,6 +165,7 @@ function prepareResume(options: ResumeRunOpts) {
     validateRoutingIdentity(options.aiRoutingIdentity);
     validateRoutingIdentity(record.ai_routing_identity);
     if (record.ai_routing_identity !== options.aiRoutingIdentity) throw new Error('AI routing configuration changed or is missing; restore the original configuration to resume this run');
+    if (options.retryFailedNode !== undefined && (record.status !== 'failed' || typeof options.retryFailedNode !== 'string' || !options.retryFailedNode || options.humanOutput !== undefined || options.humanSubmission !== undefined)) throw new Error('Explicit failure retry requires the current failed run without human answers');
     const task = currentHumanTask(options.runDir);
     if (options.humanNodeRunId !== undefined && task) {
         const current = new Rehydrator(options.runDir).rehydrate(undefined, true);
@@ -175,7 +178,7 @@ function prepareResume(options: ResumeRunOpts) {
     const submission = options.humanSubmission ?? (task && options.humanOutput !== undefined ? {
         taskId: task.taskId, submissionId: randomUUID(), outputs: options.humanOutput,
     } : undefined);
-    const state = new Rehydrator(options.runDir).rehydrate(options.humanOutput, !!task);
+    const state = new Rehydrator(options.runDir).rehydrate(options.humanOutput, !!task, options.retryFailedNode);
     if (state.kind === 'no_suspended_state') throw new Error('resumeRun: no suspended state found in this run directory');
     if (state.kind === 'suspended_no_output') throw new Error('resumeRun: run is suspended at a human node — provide --human-output');
     if (state.kind === 'unsafe_to_replay') throw new Error(`resumeRun: node ${state.nodeRunId} is unsafe to replay; inspect its effects before starting new work`);

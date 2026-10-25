@@ -67,10 +67,15 @@ export class AbortError extends Error {
 
 /**
  * FailableError：executor 执行失败（ai/code/human）。
- * 若节点有 on_failure 则路由；否则：ai/human → "failed"（可 resume），code → "aborted"。
+ * 若节点有 on_failure 则路由；否则：ai/code/human → "failed"（可 resume）。
  */
+export interface ExecutionDiagnostics {
+    stdout?: string; stderr?: string; exitCode?: number;
+    /** Unvalidated output values serialized as JSON, bounded for diagnostics only. */
+    rawOutputs?: string; truncated?: boolean;
+}
 export class FailableError extends Error {
-    constructor(message: string, public readonly aiFailure?: AiFailure) {
+    constructor(message: string, public readonly aiFailure?: AiFailure, public readonly diagnostics?: ExecutionDiagnostics) {
         super(message);
         this.name = 'FailableError';
         Object.setPrototypeOf(this, FailableError.prototype);
@@ -112,6 +117,7 @@ export type LogEvent =
     sequence: number;
     health: import('@openhilo/ai-contracts').ExecutionHealth
 }
+    | { event: 'ai_progress'; ts: number; node_run_id: string; task_id: string; attempt_id: string; sequence: number; message: string }
     | { event: 'node_running'; ts: number; node_run_id: string }
     | { event: 'node_success'; ts: number; node_run_id: string; outputs: Record<string, Value> }
     | {
@@ -122,7 +128,8 @@ export type LogEvent =
     executor?: string;
     error: string;
     on_failure: string | null;
-    failure?: AiFailure
+    failure?: AiFailure;
+    diagnostics?: ExecutionDiagnostics
 }
     | { event: 'node_suspended'; ts: number; node_run_id: string; reason: 'waiting_human'; task_id?: string }
     | {

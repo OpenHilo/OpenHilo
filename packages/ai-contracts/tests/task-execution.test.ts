@@ -55,7 +55,7 @@ it('protects results and pending question options against event mutation', async
     expect(await execution.answer('q', 'ok')).toBe('accepted');
     expect(await execution.result).toEqual(done());
     expect(await execution.answer('q', 'ok')).toBe('duplicate');
-    expect(events.map(event => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(events.map(event => event.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
 });
 
 it('waits for underlying cancellation cleanup before settling', async () => {
@@ -103,30 +103,61 @@ it('does not enter the operation for an expired deadline or pre-aborted host', a
     expect(operation).not.toHaveBeenCalled();
 });
 
-it('expires a live question and clears deadline timers after repeated answers', async () => {
+it('excludes overlapping and repeated questions from the active budget, then expires remaining work', async () => {
     jest.useFakeTimers();
     try {
-        const {host} = setup({deadlineAt: new Date(Date.now() + 1000).toISOString()});
+        const {host, events} = setup({deadlineAt: new Date(Date.now() + 1000).toISOString()});
         const execution = createTaskExecution(request, host, async context => {
-            await context.ask({id: 'q', prompt: 'Why?', answer: 'text'});
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await Promise.all([
+                context.ask({id: 'q1', prompt: 'First?', answer: 'text'}),
+                context.ask({id: 'q2', prompt: 'Second?', answer: 'text'}),
+            ]);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await context.ask({id: 'q3', prompt: 'Third?', answer: 'text'});
+            await new Promise<void>(resolve => context.signal.addEventListener('abort', () => resolve(), {once: true}));
+            return done();
+        });
+        await jest.advanceTimersByTimeAsync(100);
+        expect(execution.health).toMatchObject({activeElapsedMs: 100, remainingMs: 900});
+        await jest.advanceTimersByTimeAsync(10000);
+        expect(await execution.answer('unknown', 'ignored')).toBe('unknown_question');
+        expect(await execution.answer('q1', 42)).toBe('invalid_answer');
+        expect(await execution.answer('q1', 'yes')).toBe('accepted');
+        expect(await execution.answer('q1', 'yes')).toBe('duplicate');
+        await jest.advanceTimersByTimeAsync(10000);
+        expect(execution.health).toMatchObject({phase: 'waiting_for_input', activeElapsedMs: 100, remainingMs: 900});
+        expect(await execution.answer('q2', 'yes')).toBe('accepted');
+        await jest.advanceTimersByTimeAsync(200);
+        await jest.advanceTimersByTimeAsync(10000);
+        expect(execution.health).toMatchObject({activeElapsedMs: 300, remainingMs: 700});
+        expect(await execution.answer('q3', 'yes')).toBe('accepted');
+        await jest.advanceTimersByTimeAsync(699);
+        expect(execution.state).toBe('running');
+        await jest.advanceTimersByTimeAsync(1);
+        expect(await execution.result).toMatchObject({status: 'failed', error: {code: 'timeout', safeToReplay: false}});
+        expect(events.filter(e => e.type === 'terminal')).toHaveLength(1);
+        expect(jest.getTimerCount()).toBe(0);
+    } finally { jest.useRealTimers(); }
+});
+
+it('defaults to twelve active hours and still supports manual cancellation', async () => {
+    jest.useFakeTimers();
+    try {
+        const {host} = setup();
+        const execution = createTaskExecution(request, host, async context => {
+            await new Promise<void>(resolve => context.signal.addEventListener('abort', () => resolve(), {once: true}));
             return done();
         });
         await jest.advanceTimersByTimeAsync(0);
-        expect(execution.health?.deadlineAt).toBe(host.deadlineAt);
-        await execution.answer('unknown', 'ignored');
-        await execution.answer('unknown2', 'ignored');
-        await jest.advanceTimersByTimeAsync(1000);
-        expect(await execution.result).toMatchObject({
-            status: 'failed', error: {
-                code: 'timeout',
-                message: expect.stringContaining('while waiting for your answer'), safeToReplay: false
-            }
-        });
-        expect(await execution.answer('q', 'late')).toBe('closed');
+        expect(execution.health).toMatchObject({activeElapsedMs: 0, remainingMs: 43_200_000});
+        await jest.advanceTimersByTimeAsync(300001);
+        expect(execution.state).toBe('running');
+        expect(execution.health).toMatchObject({remainingMs: 43_200_000 - 300001});
+        await execution.cancel('manual stop');
+        expect(await execution.result).toEqual({status: 'cancelled', reason: 'manual stop'});
         expect(jest.getTimerCount()).toBe(0);
-    } finally {
-        jest.useRealTimers();
-    }
+    } finally { jest.useRealTimers(); }
 });
 
 it('settles with an explicit failure if an implementation returns non-serializable data', async () => {

@@ -1,4 +1,6 @@
 import * as path from 'path';
+import {FailableError} from '@openhilo/runtime-contracts';
+import {CodeProcessError} from './types';
 import {isFileRef, type Value} from '@openhilo/itt-contracts';
 import type {ExecutorFn} from '@openhilo/runtime/execution-engine';
 import {executeCode, executePython} from './process';
@@ -34,6 +36,7 @@ export function createCodeExecutor(workdir: string, optionsOrImplementations: Co
     const options = normalizeOptions(legacy ? {} : optionsOrImplementations);
     return async (node, inputs) => {
         if (node.type !== 'call' || node.executor !== 'code') throw new Error('Local code executor requires a code call node');
+        try {
         const lang = node.lang ?? 'bash';
         // Stream captures are not business variables in the script.
         const RESERVED = new Set(['stdout', 'stderr', 'exit_code']);
@@ -84,5 +87,10 @@ export function createCodeExecutor(workdir: string, optionsOrImplementations: Co
             ...Object.fromEntries((result.typedOutputs ?? []).map(output => [output.name, output.value])),
         };
         return {outputs};
+        } catch (error) {
+            if (options.signal?.aborted || (error instanceof CodeProcessError && error.reason === 'cancelled')) throw error;
+            if (error instanceof Error) throw new FailableError(error.message, {code: 'executor_failed', message: error.message, retryable: false, safeToReplay: false}, (error as Error & {diagnostics?: import('@openhilo/runtime-contracts').ExecutionDiagnostics}).diagnostics);
+            throw error;
+        }
     };
 }

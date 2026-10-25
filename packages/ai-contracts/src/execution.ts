@@ -38,8 +38,11 @@ export interface ExecutionHealth {
     /** Detect stale snapshots/worker loss separately from a stalled provider. */
     observedAt: string;
     heartbeatMs: number;
-    /** Absolute attempt deadline, including time waiting for human input. */
+    /** Projected deadline while running; omitted while the active-time budget is paused. */
     deadlineAt?: string;
+    /** Elapsed/remaining execution budget excludes time with pending questions. */
+    activeElapsedMs?: number;
+    remainingMs?: number;
     stopReason?: 'cancelled' | 'timeout';
 }
 
@@ -84,6 +87,7 @@ export interface ExecutionHost {
     workspace?: { id: string; uri: string };
     tools?: ToolHost;
     signal: AbortSignal;
+    /** Initial execution deadline; remaining budget pauses during questions. Defaults to 12 hours. */
     deadlineAt?: string;
     /** Defaults: heartbeat 5s, slow 60s, stalled 180s, stop grace 10s. */
     monitoring?: ExecutionMonitoring;

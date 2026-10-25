@@ -58,16 +58,29 @@ export function validateInputShape(value: unknown, shape: InputShape, field = 'i
         }
         case 'tuple': {
             if (!Array.isArray(value)) return fail('expected a tuple');
-            const items = shape.items;
-            function matches(part: number, index: number): boolean {
-                if (part === items.length) return index === (value as unknown[]).length;
-                const item = items[part];
-                if ((item.optional || item.rest) && matches(part + 1, index)) return true;
-                if (index >= (value as unknown[]).length) return false;
-                try { validateInputShape((value as unknown[])[index], item.shape, `${field}[${index}]`); } catch (error) { if (error instanceof RunInputError) return false; throw error; }
-                return matches(item.rest ? part : part + 1, index + 1);
+            const length = value.length;
+            // next[index] describes whether the remaining tuple items match the
+            // input suffix. Two rows bound memory and avoid a call per rest value.
+            let next = new Uint8Array(length + 1);
+            next[length] = 1;
+            for (let part = shape.items.length - 1; part >= 0; part--) {
+                const item = shape.items[part], current = new Uint8Array(length + 1);
+                for (let index = length; index >= 0; index--) {
+                    // Optional slots can be omitted at the end of the input;
+                    // unlike a rest, they cannot shift an existing value left.
+                    if ((item.rest || (item.optional && index === length)) && next[index]) {
+                        current[index] = 1;
+                        continue;
+                    }
+                    if (index === length || !(item.rest ? current[index + 1] : next[index + 1])) continue;
+                    try {
+                        validateInputShape(value[index], item.shape, `${field}[${index}]`);
+                        current[index] = 1;
+                    } catch (error) {if (!(error instanceof RunInputError)) throw error;}
+                }
+                next = current;
             }
-            if (!matches(0, 0)) fail('tuple items do not match their declared types or length');
+            if (!next[0]) fail('tuple items do not match their declared types or length');
             return;
         }
     }

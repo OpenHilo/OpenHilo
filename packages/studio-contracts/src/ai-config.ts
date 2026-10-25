@@ -28,6 +28,7 @@ export interface RoutedExecutionConfig {
 export type AiExecutionConfig = {adapter: 'claude-code'} | DirectAiExecutionConfig | RoutedExecutionConfig;
 export type DirectAiExecutionConfig = CodexExecutionConfig | {
     adapter: 'sdk';
+    timeout_ms?: number;
     default_profile: string;
     profiles: Record<string, SdkProfileConfig>;
 };
@@ -108,7 +109,8 @@ export function parseAiExecutionConfig(value: unknown): AiExecutionConfig | unde
         return result;
     }
     if (root.adapter !== 'sdk') throw new AiExecutionConfigError('adapter must be routed, sdk, codex or claude-code');
-    fields(root, ['adapter', 'default_profile', 'profiles'], 'SDK configuration');
+    fields(root, ['adapter', 'default_profile', 'profiles', 'timeout_ms'], 'SDK configuration');
+    if (root.timeout_ms !== undefined && (!Number.isSafeInteger(root.timeout_ms) || (root.timeout_ms as number) < 1 || (root.timeout_ms as number) > 2147483647)) throw new AiExecutionConfigError('invalid SDK timeout_ms');
     const defaultProfile = nonempty(root.default_profile, 'default_profile');
     const source = object(root.profiles, 'profiles');
     const entries = Object.entries(source).map(([name, raw]): [string, SdkProfileConfig] => {
@@ -141,5 +143,5 @@ export function parseAiExecutionConfig(value: unknown): AiExecutionConfig | unde
         return [name, result];
     });
     if (!Object.prototype.hasOwnProperty.call(source, defaultProfile)) throw new AiExecutionConfigError('default_profile must reference a configured profile');
-    return {adapter: 'sdk', default_profile: defaultProfile, profiles: Object.fromEntries(entries)};
+    return {adapter: 'sdk', default_profile: defaultProfile, profiles: Object.fromEntries(entries), ...(root.timeout_ms !== undefined ? {timeout_ms: root.timeout_ms as number} : {})};
 }

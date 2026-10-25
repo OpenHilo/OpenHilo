@@ -185,7 +185,7 @@ test('executor options reach both languages and the old injected implementation 
     assert.equal(seen.length, 3);
 });
 
-test('runtime aborts a timed-out Code task, releases the lock and refuses replay', {timeout: 5000}, async t => {
+test('runtime checkpoints a timed-out Code task, releases the lock and requires explicit retry', {timeout: 5000}, async t => {
     const root = workspace(t), entryFile = path.join(root, 'timeout.itt.impl.json');
     fs.writeFileSync(entryFile, JSON.stringify({version: 2, entry: 'code', nodes: {
         code: {id: 'code', type: 'call', executor: 'code', script: 'sleep 1; touch effect', outputs: {}, inputsFrom: {}, outputsTo: {}, next: 'END'}
@@ -195,11 +195,15 @@ test('runtime aborts a timed-out Code task, releases the lock and refuses replay
         populateSnapshot: ({snapshotDir}) => fs.copyFileSync(entryFile, path.join(snapshotDir, path.basename(entryFile))),
         createResources: () => ({executor: createCodeExecutor(root, {timeoutMs: 50, killGraceMs: 0})}),
         onEvent: event => events.push(event)});
-    assert.equal(result.status, 'aborted');
+    assert.equal(result.status, 'failed');
     assert.equal(fs.existsSync(path.join(result.runDir, 'run.lock')), false);
     assert.equal(events.some(e => e.event === 'run_complete'), false);
     assert.equal(fs.existsSync(path.join(root, 'effect')), false);
-    await assert.rejects(resumeRun({runDir: result.runDir, createResources: () => {throw new Error('must not replay');}}));
+    await assert.rejects(resumeRun({runDir: result.runDir, createResources: () => {throw new Error('must not replay');}}), /unsafe/);
+    const retryFailedNode = events.find(e => e.event === 'run_failed').node_run_id;
+    const resumed = await resumeRun({runDir: result.runDir, retryFailedNode, createResources: () => ({executor: createCodeExecutor(root, {timeoutMs: 2000})})});
+    assert.equal(resumed.status, 'completed');
+    assert.equal(fs.existsSync(path.join(root, 'effect')), true);
 });
 
 test('runtime retains run ownership through process-group escalation', {timeout: 10000}, async t => {
@@ -226,4 +230,108 @@ test('runtime retains run ownership through process-group escalation', {timeout:
     assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), true);
     assert.equal((await pending).status, 'aborted');
     assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), false);
+});
+
+for (const lang of ['bash', 'python']) test(`${lang}: cancellation remains active during result reading`, async t => {
+    const root = workspace(t), controller = new AbortController();
+    const promises = require('node:fs/promises'), originalOpen = promises.open;
+    let opened = false;
+    promises.open = async function(file, ...args) {
+        if (!opened && String(file).includes(`/itt_${lang}_`) && /\/output(?:\.json)?$/.test(String(file))) {
+            opened = true;
+            controller.abort();
+        }
+        return originalOpen.call(this, file, ...args);
+    };
+    try {
+        await assert.rejects(run(lang, root, 'value="ok"', {signal: controller.signal, killGraceMs: 0}, {value: 'text'}), reason('cancelled'));
+        assert.equal(opened, true);
+        assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+    } finally {promises.open = originalOpen;}
+});
+
+for (const lang of ['bash', 'python']) test(`${lang}: runtime keeps its lock until a cancelled result read settles`, {timeout: 10000}, async t => {
+    const root = workspace(t), controller = new AbortController();
+    const promises = require('node:fs/promises'), originalOpen = promises.open;
+    let releaseRead, opened = false, settled = false, runDir;
+    const readGate = new Promise(resolve => {releaseRead = resolve;});
+    promises.open = async function(file, ...args) {
+        if (!opened && String(file).includes(`/itt_${lang}_`) && /\/output(?:\.json)?$/.test(String(file))) {
+            opened = true;
+            fs.writeFileSync(path.join(root, 'reading'), '');
+            await readGate;
+        }
+        return originalOpen.call(this, file, ...args);
+    };
+    const entryFile = path.join(root, 'read-cleanup.itt.impl.json');
+    fs.writeFileSync(entryFile, JSON.stringify({version: 2, entry: 'code', nodes: {
+        code: {id: 'code', type: 'call', executor: 'code', lang, script: 'value="ok"',
+            outputs: {value: 'text'}, inputsFrom: {}, outputsTo: {value: 'value'}, next: 'END'}
+    }}));
+    const events = [];
+    const pending = startRun({intent: 'read-cleanup', entryFile, workdir: root, runsDir: path.join(root, 'runs'), inputs: {},
+        populateSnapshot: ({snapshotDir}) => fs.copyFileSync(entryFile, path.join(snapshotDir, path.basename(entryFile))),
+        createResources: context => {
+            runDir = context.runDir;
+            return {executor: createCodeExecutor(root, {signal: controller.signal, killGraceMs: 0})};
+        }, onEvent: event => events.push(event)}).finally(() => {settled = true;});
+    try {
+        await untilFile(path.join(root, 'reading'));
+        controller.abort();
+        await delay(30);
+        assert.equal(settled, false);
+        assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), true);
+        releaseRead();
+        assert.equal((await pending).status, 'aborted');
+        assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), false);
+        assert.equal(events.some(event => ['node_success', 'run_failed', 'run_complete'].includes(event.event)), false);
+        assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+    } finally {
+        releaseRead();
+        promises.open = originalOpen;
+        await pending;
+    }
+});
+
+for (const lang of ['bash', 'python']) test(`${lang}: late result growth kills same-group descendants before rejecting`, {timeout: 10000}, async t => {
+    const root = workspace(t), promises = require('node:fs/promises'), originalOpen = promises.open;
+    let opened = false;
+    promises.open = async function(file, ...args) {
+        if (!opened && String(file).includes(`/itt_${lang}_`) && /\/output(?:\.json)?$/.test(String(file))) {
+            opened = true;
+            fs.writeFileSync(path.join(root, 'grow'), '');
+            await untilFile(path.join(root, 'grown'));
+        }
+        return originalOpen.call(this, file, ...args);
+    };
+    const shell = '(trap "" TERM; while [ ! -e grow ]; do sleep .01; done; printf "%1000s" x >> "$_ITT_OUT"; touch grown; while [ ! -e allow-effect ]; do sleep .01; done; touch effect) >/dev/null 2>&1 & echo $! > descendant-pid; value=ok';
+    const python = `import os,time,signal
+pid=os.fork()
+if pid == 0:
+ signal.signal(signal.SIGTERM, signal.SIG_IGN)
+ fd=os.open(os.devnull,os.O_WRONLY)
+ os.dup2(fd,1); os.dup2(fd,2); os.close(fd)
+ while not os.path.exists("grow"): time.sleep(.01)
+ with open(os.environ["_ITT_OUTPUT"],"a") as f: f.write("x"*1000)
+ open("grown","w").close()
+ while not os.path.exists("allow-effect"): time.sleep(.01)
+ open("effect","w").close()
+ os._exit(0)
+open("descendant-pid","w").write(str(pid))
+value="ok"`;
+    try {
+        await assert.rejects(run(lang, root, lang === 'bash' ? shell : python,
+            {maxResultBytes: 128, killGraceMs: 20}, {value: 'text'}), reason('result_limit'));
+        assert.equal(opened, true, 'Must grow the real protocol after process close, during result opening');
+        fs.writeFileSync(path.join(root, 'allow-effect'), '');
+        await delay(100);
+        assert.equal(fs.existsSync(path.join(root, 'effect')), false);
+    } finally {
+        promises.open = originalOpen;
+        const pidFile = path.join(root, 'descendant-pid');
+        if (fs.existsSync(pidFile)) {
+            try {process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL');}
+            catch (error) {if (error.code !== 'ESRCH') throw error;}
+        }
+    }
 });
