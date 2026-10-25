@@ -2,12 +2,18 @@
 
 ## Unreleased
 
+- Confirmed AI cancellation aborts the workflow after session cleanup and bypasses
+  failure branches, including nested calls after Human resume. A cancelled run
+  cannot fall back to an older Human checkpoint. Provider failures and active-time
+  timeouts retain failure routing and explicit failed-step recovery.
+
 - Local Code tasks support host-configured subprocess deadlines, AbortSignal
   cancellation and process-group termination with SIGTERM/SIGKILL escalation.
   Cleanup finishes before execution settles and the run lock is released.
 - Captured stdout/stderr and serialized business results each have a default
   10 MiB budget. Hosts can raise these limits or opt out with `Infinity`.
-  Limits abort the task rather than returning truncated business results.
+  Limits fail the task rather than returning truncated business results; the runtime
+  honors failure routing or saves a checkpoint for explicit retry.
   UTF-8 split across pipe chunks is preserved; file references use streaming hashes.
 - Upgrade OpenAI/Anthropic SDKs, Ajv with explicit standard formats, TypeScript
   6, Jest and ts-jest. Build configurations use modern module resolution.

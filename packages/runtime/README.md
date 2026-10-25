@@ -192,7 +192,10 @@ resources. After the user reviews possible partial effects, pass `retryFailedNod
 the current `run_failed.node_run_id` to explicitly retry that invocation. This token is
 checked again under the run lock: stale requests, completed runs and concurrent workers
 cannot replay later work. Automatic callers must never infer this user authorization.
-Manual cancellation remains an abort. A crash or legacy abort without a final usable
+Confirmed AI cancellation remains an abort after session cleanup, bypasses all
+`on_failure` branches and cannot revive an earlier Human checkpoint. Ordinary
+provider failures, active-time timeouts and runtime question/attachment errors
+retain their failure handling. A crash or legacy abort without a final usable
 checkpoint is not recoverable through this mechanism.
 
 Provider messages and tool activity are recorded as `ai_progress` events. Output is bounded
