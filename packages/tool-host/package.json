@@ -33,11 +33,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "url": "git+https://github.com/OpenHilo/OpenHilo.git",
     "directory": "packages/tool-host"
   },
-  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/tool-host#readme",
+  "homepage": "https://github.com/OpenHilo/OpenHilo/tree/main/packages/tool-host#readme",
   "bugs": {
-    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+    "url": "https://github.com/OpenHilo/OpenHilo/issues"
   }
 }

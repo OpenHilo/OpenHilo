@@ -1,6 +1,6 @@
 # Contributing
 
-Report reproducible bugs through [GitHub Issues](https://github.com/eric2610abc/OpenHilo/issues).
+Report reproducible bugs through [GitHub Issues](https://github.com/OpenHilo/OpenHilo/issues).
 For vulnerabilities or sensitive run data, follow [SECURITY.md](SECURITY.md).
 
 Use Node 22 or 24, npm, Bash and Python 3. Work on a branch and install from the

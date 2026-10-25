@@ -41,7 +41,7 @@ Use **Node 22 or 24**, npm, Bash and Python 3. No server, database or AI account
 needed for the scripted offline demo. Run from the repository root:
 
 ```sh
-git clone https://github.com/eric2610abc/OpenHilo.git
+git clone https://github.com/OpenHilo/OpenHilo.git
 cd OpenHilo
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build:packages
@@ -189,9 +189,9 @@ All package names have the `@openhilo/` prefix. Open a package's README under
 
 For development, see [contributing](CONTRIBUTING.md) and [validation](docs/validation.md).
 The offline test suite runs on Node 22 and 24 in
-[GitHub Actions](https://github.com/eric2610abc/OpenHilo/actions/workflows/ci.yml).
+[GitHub Actions](https://github.com/OpenHilo/OpenHilo/actions/workflows/ci.yml).
 
-[Report a bug](https://github.com/eric2610abc/OpenHilo/issues) ·
+[Report a bug](https://github.com/OpenHilo/OpenHilo/issues) ·
 [MIT license](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.txt)
 
 ### Choose AI by task

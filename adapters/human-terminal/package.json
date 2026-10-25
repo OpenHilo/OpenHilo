@@ -32,11 +32,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "url": "git+https://github.com/OpenHilo/OpenHilo.git",
     "directory": "adapters/human-terminal"
   },
-  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/adapters/human-terminal#readme",
+  "homepage": "https://github.com/OpenHilo/OpenHilo/tree/main/adapters/human-terminal#readme",
   "bugs": {
-    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+    "url": "https://github.com/OpenHilo/OpenHilo/issues"
   }
 }

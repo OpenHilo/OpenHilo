@@ -53,11 +53,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "url": "git+https://github.com/OpenHilo/OpenHilo.git",
     "directory": "adapters/ai-codex"
   },
-  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/adapters/ai-codex#readme",
+  "homepage": "https://github.com/OpenHilo/OpenHilo/tree/main/adapters/ai-codex#readme",
   "bugs": {
-    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+    "url": "https://github.com/OpenHilo/OpenHilo/issues"
   }
 }

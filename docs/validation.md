@@ -10,9 +10,9 @@ syntax; [compatibility](compatibility.md) defines data and recovery behavior.
 | --- | --- | --- |
 | macOS arm64 | 22.23.3, 24.21.0 | Builds, types, full offline suite, package consumers and source examples |
 | Ubuntu 24.04 ARM64 | 22.23.3, 24.21.0 | Fresh installation, builds, types, full offline suite and offline walkthroughs; package consumers on Node 24 |
-| Ubuntu 24.04 x64 | 22.23.3, 24.21.0 | [GitHub Actions](https://github.com/eric2610abc/OpenHilo/actions/runs/39144308133): builds, types, full offline suite and package consumers on both versions |
+| Ubuntu 24.04 x64 | 22.23.3, 24.21.0 | [GitHub Actions](https://github.com/OpenHilo/OpenHilo/actions/runs/39144308133): builds, types, full offline suite and package consumers on both versions |
 
-The current [CI workflow](https://github.com/eric2610abc/OpenHilo/actions/workflows/ci.yml)
+The current [CI workflow](https://github.com/OpenHilo/OpenHilo/actions/workflows/ci.yml)
 runs on Linux x64 with Node 22 and 24 for each push and pull request. Check the
 run for your exact commit. Native Windows has not been verified. The local Code
 adapter and report examples require Bash/Python in addition to Node; pure

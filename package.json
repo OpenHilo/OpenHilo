@@ -50,10 +50,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eric2610abc/OpenHilo.git"
+    "url": "git+https://github.com/OpenHilo/OpenHilo.git"
   },
-  "homepage": "https://github.com/eric2610abc/OpenHilo#readme",
+  "homepage": "https://github.com/OpenHilo/OpenHilo#readme",
   "bugs": {
-    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+    "url": "https://github.com/OpenHilo/OpenHilo/issues"
   }
 }

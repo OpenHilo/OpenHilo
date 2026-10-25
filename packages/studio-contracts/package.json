@@ -42,12 +42,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eric2610abc/OpenHilo.git",
+    "url": "git+https://github.com/OpenHilo/OpenHilo.git",
     "directory": "packages/studio-contracts"
   },
-  "homepage": "https://github.com/eric2610abc/OpenHilo/tree/main/packages/studio-contracts#readme",
+  "homepage": "https://github.com/OpenHilo/OpenHilo/tree/main/packages/studio-contracts#readme",
   "bugs": {
-    "url": "https://github.com/eric2610abc/OpenHilo/issues"
+    "url": "https://github.com/OpenHilo/OpenHilo/issues"
   },
   "dependencies": {
     "@openhilo/itt-contracts": "0.1.0"

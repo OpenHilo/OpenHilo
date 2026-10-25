@@ -7,7 +7,7 @@ for tested platforms and the latest CI results.
 ## Get the source
 
 ```sh
-git clone https://github.com/eric2610abc/OpenHilo.git
+git clone https://github.com/OpenHilo/OpenHilo.git
 cd OpenHilo
 ```
 
