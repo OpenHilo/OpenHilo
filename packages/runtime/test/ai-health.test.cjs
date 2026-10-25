@@ -96,14 +96,14 @@ test('runtime persists and publishes stopping health while an uncooperative effe
         await cancellation;
     }
     const result = await run;
-    assert.equal(result.status, 'failed');
+    assert.equal(result.status, 'aborted');
     assert.equal(closed, true);
-    fs.rmSync(path.join(runDir, 'run.lock'), {force: true});
+    assert.equal(fs.existsSync(path.join(runDir, 'run.lock')), false);
     await assert.rejects(resumeRun({
         runDir, createResources() {
             throw new Error('MUST NOT ACQUIRE');
         }
-    }), /safe.*replay|unsafe/i);
+    }), /no suspended state/i);
 });
 
 

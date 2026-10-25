@@ -59,8 +59,13 @@ that stopping an AI child cancels every external effect.
 Local Code hosts can configure `timeoutMs`, an `AbortSignal`, `killGraceMs`,
 `maxOutputBytes` and `maxResultBytes` through `createCodeExecutor(workdir, options)`.
 The stream and serialized-result limits default to 10 MiB each; the subprocess
-deadline is opt-in. A timeout, cancellation or exceeded limit aborts the Code
-run, with no automatic replay or successful partial outputs. On macOS/Linux,
+deadline is opt-in. Through `createCodeExecutor`, timeouts, exceeded limits and
+output-validation errors follow any configured `on_failure` branch. Without a
+recovery branch they produce a checkpointed `failed` run requiring explicit retry;
+no successful partial outputs are returned. Host cancellation produces
+`aborted`, bypasses failure routing and cannot be resumed. The low-level
+`executeCode`/`executePython` APIs still reject control failures with
+`CodeProcessError`; the adapter maps these into runtime outcomes. On macOS/Linux,
 termination targets the process group and escalates from SIGTERM to SIGKILL;
 the run lock remains held until subprocess and temporary-file cleanup settles.
 This cannot undo effects or control descendants that deliberately detach into
@@ -69,9 +74,24 @@ for exact limits, error reasons and platform boundaries.
 
 ## Recovery limits
 
-Controlled Human checkpoints preserve the original snapshot, scopes and completed
-steps. Incomplete terminal log records do not revive an older checkpoint. Live
-local PID locks prevent a second local resume. These are not distributed leases.
+Controlled Human and executor-failure checkpoints preserve the original snapshot,
+scopes and completed steps. Incomplete terminal log records do not revive an older
+checkpoint. Live local PID locks prevent a second local resume. These are not distributed leases.
+
+### Explicit failed-step retry
+
+After inspecting and reconciling possible partial effects, a host can retry the
+current failed invocation with `resumeRun({runDir, retryFailedNode, createResources})`.
+Use the current `run_failed.node_run_id` as `retryFailedNode`; preserve the run's
+original executor configuration and any `aiRoutingIdentity`. The runtime validates
+the token again under its lock and rejects stale tokens. It restores the saved
+workflow and retries that invocation, without repeating completed steps or earlier
+Human answers. See [runtime recovery](../packages/runtime/README.md#ai-health-and-safe-recovery).
+
+This is explicit user-authorized retry, not automatic replay. Do not infer consent
+from a failure event. AI cancellation also aborts after cleanup and bypasses
+`on_failure`; it does not create a retryable failure checkpoint. Ordinary provider
+failures, timeouts and host question/attachment errors retain their failure routing.
 
 ### Local lock recovery
 

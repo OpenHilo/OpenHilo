@@ -13,7 +13,7 @@ import {
     type TaskRequest,
     validateOutputs,
 } from '@openhilo/ai-contracts';
-import {type CFGNode, FailableError, type Value} from './types';
+import {AbortError, type CFGNode, FailableError, type Value} from './types';
 import {makeFileRef} from './file-reference';
 
 export interface AiDispatchOptions {
@@ -34,6 +34,7 @@ export async function dispatchAiTask(
     onAiEvent?: ExecutionHost['onEvent'],
 ): Promise<{ outputs: Record<string, Value> }> {
     let accepted = false;
+    let cancellationError: AbortError | undefined;
     try {
         if (options.runId && (executor.capabilities.includes('model_selection') || options.aiRoutingIdentity !== undefined) && options.aiRoutingIdentity !== executor.id) {
             throw new ContractError({code:'invalid_request',message:'AI routing configuration does not match the run',retryable:false,safeToReplay:true});
@@ -115,7 +116,10 @@ export async function dispatchAiTask(
                 safeToReplay: false
             });
             if (result.status === 'failed') throw new ContractError(result.error);
-            if (result.status === 'cancelled') throw new Error(`AI task cancelled: ${result.reason}`);
+            if (result.status === 'cancelled') {
+                cancellationError = new AbortError(`AI task cancelled: ${result.reason}`);
+                throw cancellationError;
+            }
             const outputs: Record<string, Value> = validateOutputs(request.output, result.outputs);
             for (const [key, kind] of Object.entries(request.output)) {
                 if (kind !== 'file' && kind !== 'dir') continue;
@@ -135,6 +139,9 @@ export async function dispatchAiTask(
             if (result.session) await executor.releaseSession?.(result.session);
         }
     } catch (error) {
+        // A confirmed cancellation must not enter on_failure, even if the awaited
+        // session release rejects. Internal question/attachment failures stay failable.
+        if (cancellationError) throw cancellationError;
         throw new FailableError(error instanceof Error ? error.message : String(error),
             error instanceof ContractError ? error.failure : accepted ? {
                 code: 'outcome_unknown',
