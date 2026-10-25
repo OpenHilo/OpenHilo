@@ -1,5 +1,7 @@
 # OpenHilo
 
+<p align="center"><img src="docs/assets/brand/readme.png" alt="OpenHilo" width="600" /></p>
+
 **AI, code, and humans. One workflow.**  
 **人、AI、代码，尽在同一个工作流。**
 
