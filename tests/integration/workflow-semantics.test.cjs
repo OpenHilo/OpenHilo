@@ -215,9 +215,13 @@ test('a new Node process restores shadowed scopes and value ownership without re
     assert.deepEqual(JSON.parse(child.stdout), {status: 'completed', outputs: {value: 16}});
 });
 
+// Measure application reachability in a fixed interpreter mode. Optimized-code
+// temporary roots and compilation caches vary across V8/CPU builds and are not
+// workflow ownership. Both the release probe and retained-scope negative control
+// use this mode; ordinary semantics and recovery tests still run with the JIT.
 test('run scopes and resource handles are released across repeated completion, suspension and failure', () => {
     const {spawnSync} = require('node:child_process');
-    const child = spawnSync(process.execPath, ['--expose-gc', path.join(__dirname, '../fixtures/semantics-memory.cjs')], {
+    const child = spawnSync(process.execPath, ['--jitless', '--expose-gc', path.join(__dirname, '../fixtures/semantics-memory.cjs')], {
         encoding: 'utf8',
         timeout: 60000
     });
@@ -233,7 +237,7 @@ test('run scopes and resource handles are released across repeated completion, s
 
 test('memory lifecycle probe detects a strongly retained exited loop', () => {
     const {spawnSync} = require('node:child_process');
-    const child = spawnSync(process.execPath, ['--expose-gc', path.join(__dirname, '../fixtures/semantics-memory.cjs'), '--retain-exited-loop'], {
+    const child = spawnSync(process.execPath, ['--jitless', '--expose-gc', path.join(__dirname, '../fixtures/semantics-memory.cjs'), '--retain-exited-loop'], {
         encoding: 'utf8',
         timeout: 60000
     });
