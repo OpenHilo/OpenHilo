@@ -6,6 +6,13 @@ const {ScopeManager} = require('@openhilo/runtime');
 const {FailableError, AbortError} = require('@openhilo/runtime-contracts');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hilo-memory-'));
 const refs = [];
+// Do not dereference targets in an async probe frame: V8 may keep its temporary
+// registers alive across await even after the source expression is finished.
+// Only a boolean crosses back into the waiting human callback. This keeps the
+// observer from becoming a strong owner of the object it measures.
+function isAlive(ref) {
+    return ref.deref() !== undefined;
+}
 const push = ScopeManager.prototype.push;
 ScopeManager.prototype.push = function (scope) {
     refs.push(new WeakRef(this));
@@ -90,7 +97,7 @@ async function batch() {
             for (let i = 0; i < 6; i++) await batch();
             await settle();
             samples.push(process.memoryUsage().heapUsed);
-            assert.equal(refs.filter(ref => ref.deref() !== undefined).length, 0, 'completed/suspended/failed/aborted run scopes must be collectible');
+            assert.equal(refs.filter(isAlive).length, 0, 'completed/suspended/failed/aborted run scopes must be collectible');
         }
         assert.equal(closed, opened);
         // Bound retained heap, not RSS (V8 may keep freed pages). A leaked 20k array/run exceeds this margin.
@@ -277,7 +284,7 @@ async function batch() {
                         await settle();
                         assert.equal(loopTargets.length, 1);
                         if (task.prompt === 'InsideLoop') {
-                            loopTargetRetainedWhileActive = loopTargets[0].deref() !== undefined;
+                            loopTargetRetainedWhileActive = isAlive(loopTargets[0]);
                             assert.ok(loopTargetRetainedWhileActive, 'active iterator must retain its original array element');
                             assert.equal((await ctx.submit({
                                 taskId: task.taskId,
@@ -286,7 +293,7 @@ async function batch() {
                             })).status, 'accepted');
                         } else {
                             assert.equal(task.prompt, 'AfterLoop');
-                            loopTargetReleasedAfterExit = loopTargets[0].deref() === undefined;
+                            loopTargetReleasedAfterExit = !isAlive(loopTargets[0]);
                             assert.ok(loopTargetReleasedAfterExit, 'exited iterator must not pin its cleared target during the next human wait');
                         }
                     }
@@ -301,7 +308,7 @@ async function batch() {
             retainedLoopContexts.length = 0;
         }
         await settle();
-        assert.equal(refs.filter(ref => ref.deref() !== undefined).length, 0);
+        assert.equal(refs.filter(isAlive).length, 0);
         console.log(JSON.stringify({
             rawCheckpointReleased: checked,
             loopTargetRetainedWhileActive,

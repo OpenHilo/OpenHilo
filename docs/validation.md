@@ -157,6 +157,15 @@ Foreground SIGINT forwarding and late result growth with background descendants
 are covered. This integration did not repeat live-provider acceptance or modify
 existing workflow runs. Linux Node 22/24 validation runs in CI for the pushed commit.
 
+The first Linux Node 24 CI attempts failed the exited-loop reachability probe;
+Node 22 passed. The probe now dereferences weak targets in a synchronous helper
+so its async Human callback receives only a boolean, avoiding observer-owned
+reference temporaries across an await. Collection counts and assertions are
+unchanged, including the negative control that deliberately retains an exited
+loop and must detect it. The focused checks passed on macOS Node 22/24 and in a
+Linux amd64 Node 24 container with the offline guard enabled. CI remains the
+cross-platform acceptance gate; a failed check is not treated as a passing run.
+
 ## Limits of these checks
 
 Passing tests does not establish full JavaScript compatibility, arbitrary crash
