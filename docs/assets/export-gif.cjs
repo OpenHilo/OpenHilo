@@ -8,7 +8,7 @@ const {spawnSync} = require('node:child_process');
 const {parseArgs} = require('node:util');
 const {timeline} = require('./workflow.playback.cjs');
 async function main(args) {
-    const {values} = parseArgs({args, options: {input: {type: 'string'}, output: {type: 'string'}}});
+    const {values} = parseArgs({args, options: {input: {type: 'string'}, output: {type: 'string'}, preview: {type: 'string'}}});
     if (!values.input || !values.output) throw new Error('Use --input <Archify HTML> --output <new GIF>');
     const input = path.resolve(values.input), output = path.resolve(values.output);
     if (fs.existsSync(output)) throw new Error('Output already exists; choose a new GIF path');
@@ -34,12 +34,27 @@ async function main(args) {
         await page.addStyleTag({content:'.toolbar,.diagram-nav,.reader-rail,.cards,#node-outline {visibility:hidden!important} .pulse-dot {animation:none!important}'});
         await page.evaluate(()=>window.Archify.motionGovernor.resume({persist:false}));
         await page.clock.runFor(50);
+        await page.evaluate(() => document.fonts.ready);
+        const overflow = await page.evaluate(() => [...document.querySelectorAll('svg [data-node-id]')].flatMap(node => {
+            const box = node.querySelector('rect')?.getBBox();
+            if (!box) return [];
+            return [...node.querySelectorAll('text')].filter(text => {
+                const b = text.getBBox();
+                return b.x < box.x + 3 || b.x + b.width > box.x + box.width - 3;
+            }).map(text => `${node.dataset.nodeId}: ${text.textContent}`);
+        }));
+        if (overflow.length) throw new Error('Node text exceeds its box: ' + overflow.join(', '));
         const clip = await page.evaluate(()=>{
-            const header=document.querySelector('.header').getBoundingClientRect();
             const diagram=document.querySelector('.diagram-container').getBoundingClientRect();
-            const y=Math.max(0,Math.floor(header.y)-16);
-            return {x:0,y,width:window.innerWidth,height:Math.ceil(diagram.bottom-y)+16};
+            return {x:Math.floor(diagram.x), y:Math.floor(diagram.y), width:Math.ceil(diagram.width), height:Math.ceil(diagram.height)};
         });
+        if (values.preview) {
+            const preview = path.resolve(values.preview);
+            if (fs.existsSync(preview)) throw new Error('Preview already exists; choose a new path');
+            await page.screenshot({path:preview, clip});
+            console.log(JSON.stringify({preview, clip}));
+            return;
+        }
         const fps=20, count=Math.round(timeline().duration*fps);
         const visited=[];
         for(let i=0;i<count;i++) {

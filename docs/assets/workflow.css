@@ -1,3 +1,7 @@
-/* Keep Archify's original light palette; playback never highlights nodes. */
-.subtitle {font-size:20px;font-weight:650;color:var(--text);line-height:1.5;margin-top:14px;}
-.demo-path {display:block;font-size:12px;font-weight:400;color:var(--text-muted);margin-top:5px;}
+/* README export: the surrounding document supplies the heading and introduction. */
+.header { display:none!important; }
+.diagram-container { padding:8px!important; margin:0!important; border-radius:0!important; box-shadow:none!important; }
+.diagram-container svg text[data-node-label] { font-size:13px; }
+.diagram-container svg [data-node-id] .t-muted { font-size:9.5px; }
+/* Keep the original light palette; playback never highlights nodes. */
+.demo-path { display:none; }
