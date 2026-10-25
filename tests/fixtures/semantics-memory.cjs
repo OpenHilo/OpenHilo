@@ -13,6 +13,11 @@ const refs = [];
 function isAlive(ref) {
     return ref.deref() !== undefined;
 }
+// Run deref in its own synchronous event-loop job. Even if V8 inlines isAlive,
+// no target can remain in the awaiting human callback's temporary registers.
+function observeAlive(ref) {
+    return new Promise(resolve => setImmediate(() => resolve(isAlive(ref))));
+}
 const push = ScopeManager.prototype.push;
 ScopeManager.prototype.push = function (scope) {
     refs.push(new WeakRef(this));
@@ -284,7 +289,7 @@ async function batch() {
                         await settle();
                         assert.equal(loopTargets.length, 1);
                         if (task.prompt === 'InsideLoop') {
-                            loopTargetRetainedWhileActive = isAlive(loopTargets[0]);
+                            loopTargetRetainedWhileActive = await observeAlive(loopTargets[0]);
                             assert.ok(loopTargetRetainedWhileActive, 'active iterator must retain its original array element');
                             assert.equal((await ctx.submit({
                                 taskId: task.taskId,
@@ -293,7 +298,7 @@ async function batch() {
                             })).status, 'accepted');
                         } else {
                             assert.equal(task.prompt, 'AfterLoop');
-                            loopTargetReleasedAfterExit = !isAlive(loopTargets[0]);
+                            loopTargetReleasedAfterExit = !(await observeAlive(loopTargets[0]));
                             assert.ok(loopTargetReleasedAfterExit, 'exited iterator must not pin its cleared target during the next human wait');
                         }
                     }

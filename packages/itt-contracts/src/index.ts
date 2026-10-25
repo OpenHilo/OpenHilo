@@ -207,7 +207,7 @@ export interface LeafITT {
     /** Legacy metadata interpreted by an explicitly installed application policy. */
     level?: string;
     requiredExtensions?: ExtensionRequirement[];
-    tags?: Record<string, string>;         // intent tags: { "_domain": "Product", ... }
+    tags?: Record<string, string>;         // application-defined workflow tags
     public?: boolean;   // undefined or true = public; false = private (not indexed, not shown in UI)
 }
 

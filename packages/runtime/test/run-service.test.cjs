@@ -336,7 +336,7 @@ test('run-service loads with all application, platform, database and AI implemen
     require('node:child_process').execFileSync(process.execPath, ['-e', `
     const Module = require('node:module'), original = Module._load;
     Module._load = function(id, ...args) {
-      if (/platform-services|solo-company|ai-sdk|ai-claude-code|better-sqlite3|openai|anthropic/.test(id)) throw new Error('Forbidden dependency: ' + id);
+      if ((id.startsWith('@') && !id.startsWith('@openhilo/')) || /platform-services|ai-sdk|ai-claude-code|better-sqlite3|openai|anthropic/.test(id)) throw new Error('Forbidden dependency: ' + id);
       return original.call(this, id, ...args);
     };
     require('@openhilo/runtime/run-service');

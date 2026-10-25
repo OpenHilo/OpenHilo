@@ -11,6 +11,9 @@ export interface StudioApplication {
     };
     /** Omitted: show all schema-defined class filters. Empty: show none. */
     classFilterTags?: string[];
+    /** Optional scalar workflow metadata field and its display choices. */
+    workflowFacet?: { field: string; label: string; values: Array<{ value: string; label: string }> };
+    workflowFilterTags?: string[];
     tags: Record<string, { tone?: StudioTone; inlineEditable?: boolean }>;
 }
 
@@ -37,6 +40,16 @@ export function parseStudioApplication(value: unknown): StudioApplication {
         const seen = new Set<string>();
         for (const entry of facet.values) {
             if (!object(entry) || !string(entry.value) || !string(entry.label) || !tone(entry.tone) || (entry.description !== undefined && !string(entry.description)) || seen.has(entry.value)) return fail();
+            seen.add(entry.value);
+        }
+    }
+    if (value.workflowFilterTags !== undefined && (!Array.isArray(value.workflowFilterTags) || !value.workflowFilterTags.every(string))) return fail();
+    if (value.workflowFacet !== undefined) {
+        const facet = value.workflowFacet;
+        if (!object(facet) || !string(facet.field) || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(facet.field) || ['__proto__', 'constructor', 'prototype'].includes(facet.field) || !string(facet.label) || !Array.isArray(facet.values)) return fail();
+        const seen = new Set<string>();
+        for (const entry of facet.values) {
+            if (!object(entry) || !string(entry.value) || !string(entry.label) || seen.has(entry.value)) return fail();
             seen.add(entry.value);
         }
     }
