@@ -26,3 +26,11 @@ test('SDK active budget is optional, roundtrips and rejects invalid values', () 
         assert.throws(() => parseAiExecutionConfig({...value, timeout_ms}));
     }
 });
+
+test('SDK base_url allows plain HTTP only for loopback hosts', () => {
+    const profile = base_url => ({adapter: 'sdk', default_profile: 'main', profiles: {main: {provider: 'openai', model: 'fixture', api_key_env: 'FIXTURE_KEY', base_url}}});
+    for (const url of ['https://api.example.com/v1', 'http://localhost:8080/v1', 'http://LOCALHOST/v1', 'http://127.0.0.1:11434', 'http://127.255.0.9/v1', 'http://[::1]:8080/v1'])
+        assert.equal(parseAiExecutionConfig(profile(url)).profiles.main.base_url, url);
+    for (const url of ['http://api.example.com/v1', 'http://10.0.0.5/v1', 'http://128.0.0.1/', 'http://127.0.0.1.example.com/', 'http://localhost.example.com/', 'http://[::2]/', 'http://0.0.0.0/'])
+        assert.throws(() => parseAiExecutionConfig(profile(url)), /HTTPS unless the host is loopback/, url);
+});

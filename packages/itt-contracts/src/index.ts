@@ -9,8 +9,7 @@ export interface ExtensionRequirement {
  * OpenHilo v2 CFG 类型定义
  *
  * ITT v2 格式基于扁平化有向控制流图（CFG），以 while True 状态机驱动执行。
- * 依赖规范：docs/itt-format-spec-v2.md
- * 依赖架构：docs/plans/2026-03-16-scheduler-architecture.md
+ * 执行语义见 docs/execution-model.md；源语言见 packages/compiler/LANGUAGE.md。
  */
 
 // ============================================================================
@@ -41,12 +40,13 @@ export function isFileRef(v: unknown): v is FileRef {
         o.type === 'file_ref' &&
         typeof o.path === 'string' &&
         typeof o.hash === 'string' &&
-        typeof o.mtime === 'number'
+        typeof o.mtime === 'number' &&
+        Number.isFinite(o.mtime)
     );
 }
 
 // ============================================================================
-// CFG 节点类型（规范 §5–§9）
+// CFG 节点类型
 // ============================================================================
 
 /** assign 节点：计算表达式并写入变量 */
@@ -56,7 +56,7 @@ export interface AssignNode {
     assignments: Array<{
         var: string;
         type: ValueType;
-        expr: string;  // JS 表达式（见 docs/ts-subset-spec.md §4）
+        expr: string;  // JS 表达式（见 packages/compiler/LANGUAGE.md）
     }>;
     next: string;   // 下一个节点 ID 或 'END'
 }
@@ -65,7 +65,7 @@ export interface AssignNode {
 export interface IfNode {
     id: string;
     type: 'if';
-    condition: string;  // JS 布尔表达式（见 docs/ts-subset-spec.md §4）
+    condition: string;  // JS 布尔表达式（见 packages/compiler/LANGUAGE.md）
     next_true: string;
     next_false: string;
 }
@@ -154,7 +154,7 @@ function isCFGNodeBase(n: unknown): n is CFGNode {
 }
 
 // ============================================================================
-// ITT v2 格式（规范 §3）
+// ITT v2 格式
 // ============================================================================
 
 /** ITT v2 顶层结构（CFG 格式） */
@@ -179,7 +179,7 @@ export interface CFGITT {
 }
 
 /**
- * Leaf ITT（`name.itt.json`，规范 §4.1）
+ * Leaf ITT（`name.itt.json`）
  *
  * 定义单个执行单元的接口。与 CFGITT 不同，Leaf ITT 不包含 CFG（无 entry/nodes），
  * 而是包含执行配置（executor、role、model、constraints、intent）和函数签名（inputs、outputs）。
@@ -214,7 +214,7 @@ export interface LeafITT {
 }
 
 // ============================================================================
-// 保留字（规范 §8）
+// 保留字
 // ============================================================================
 
 /** CFG 控制流保留字，不能用作节点 ID 或变量名 */

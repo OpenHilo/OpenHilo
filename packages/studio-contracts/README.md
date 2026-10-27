@@ -31,7 +31,7 @@ The parser validates and copies the descriptor. It does not render these behavio
 The embedding application supplies tag definitions, data constraints, rendering
 and transport. An application may expose `/api/application` and `/api/tag-definitions`,
 but those routes are external integration conventions, not routes provided or
-required by this package. Invalid descriptor versions or shapes fail explicitly.
+required by this package. Invalid descriptor versions, shapes or unknown fields fail explicitly.
 
 `GENERIC_STUDIO_APPLICATION` contains no business rules. An embedding
 application supplies its own descriptor. This package does not install

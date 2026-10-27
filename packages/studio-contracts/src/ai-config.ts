@@ -55,6 +55,11 @@ function nonempty(value: unknown, at: string): string {
     return value;
 }
 
+/** WHATWG URL hostnames are already lowercased, IPv4-normalized and bracket IPv6 literals. */
+function loopback(hostname: string): boolean {
+    return hostname === 'localhost' || hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+}
+
 /** Absent configuration returns undefined without choosing a provider. Explicit selections are
  * validated as data only; the host supplies implementations. Invalid selections never imply fallback.
  */
@@ -133,6 +138,8 @@ export function parseAiExecutionConfig(value: unknown): AiExecutionConfig | unde
             }
             if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash)
                 throw new AiExecutionConfigError('base_url must be HTTP(S), without credentials, query or fragment');
+            if (parsed.protocol === 'http:' && !loopback(parsed.hostname))
+                throw new AiExecutionConfigError('base_url must use HTTPS unless the host is loopback (localhost, 127.0.0.0/8 or ::1)');
             result.base_url = url;
         }
         if (profile.max_output_tokens !== undefined) {

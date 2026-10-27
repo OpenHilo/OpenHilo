@@ -27,31 +27,37 @@ export function parseStudioApplication(value: unknown): StudioApplication {
         throw new Error('Invalid Studio application descriptor');
     };
     const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+    const only = (v: Record<string, unknown>, ...keys: string[]) => Object.keys(v).every(key => keys.includes(key));
     const string = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
     const tone = (v: unknown) => v === undefined || ['neutral', 'indigo', 'cyan', 'green', 'emerald', 'orange', 'purple', 'sky', 'yellow'].includes(v as string);
     if (!object(value) || value.version !== 1 || !string(value.id) || !string(value.title) || !object(value.tags)) return fail();
+    if (!only(value, 'version', 'id', 'title', 'classFacet', 'classFilterTags', 'workflowFacet', 'workflowFilterTags', 'tags')) return fail();
     for (const presentation of Object.values(value.tags)) {
-        if (!object(presentation) || !tone(presentation.tone) || (presentation.inlineEditable !== undefined && typeof presentation.inlineEditable !== 'boolean')) return fail();
+        if (!object(presentation) || !only(presentation, 'tone', 'inlineEditable') || !tone(presentation.tone) || (presentation.inlineEditable !== undefined && typeof presentation.inlineEditable !== 'boolean')) return fail();
     }
     if (value.classFilterTags !== undefined && (!Array.isArray(value.classFilterTags) || !value.classFilterTags.every(string))) return fail();
     if (value.classFacet !== undefined) {
         const facet = value.classFacet;
-        if (!object(facet) || !string(facet.tag) || !Array.isArray(facet.values)) return fail();
+        if (!object(facet) || !only(facet, 'tag', 'values') || !string(facet.tag) || !Array.isArray(facet.values)) return fail();
         const seen = new Set<string>();
         for (const entry of facet.values) {
-            if (!object(entry) || !string(entry.value) || !string(entry.label) || !tone(entry.tone) || (entry.description !== undefined && !string(entry.description)) || seen.has(entry.value)) return fail();
+            if (!object(entry) || !only(entry, 'value', 'label', 'description', 'tone') || !string(entry.value) || !string(entry.label) || !tone(entry.tone) || (entry.description !== undefined && !string(entry.description)) || seen.has(entry.value)) return fail();
             seen.add(entry.value);
         }
     }
     if (value.workflowFilterTags !== undefined && (!Array.isArray(value.workflowFilterTags) || !value.workflowFilterTags.every(string))) return fail();
     if (value.workflowFacet !== undefined) {
         const facet = value.workflowFacet;
-        if (!object(facet) || !string(facet.field) || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(facet.field) || ['__proto__', 'constructor', 'prototype'].includes(facet.field) || !string(facet.label) || !Array.isArray(facet.values)) return fail();
+        if (!object(facet) || !only(facet, 'field', 'label', 'values') || !string(facet.field) || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(facet.field) || ['__proto__', 'constructor', 'prototype'].includes(facet.field) || !string(facet.label) || !Array.isArray(facet.values)) return fail();
         const seen = new Set<string>();
         for (const entry of facet.values) {
-            if (!object(entry) || !string(entry.value) || !string(entry.label) || seen.has(entry.value)) return fail();
+            if (!object(entry) || !only(entry, 'value', 'label') || !string(entry.value) || !string(entry.label) || seen.has(entry.value)) return fail();
             seen.add(entry.value);
         }
     }
-    return JSON.parse(JSON.stringify(value)) as StudioApplication;
+    try {
+        return JSON.parse(JSON.stringify(value)) as StudioApplication;
+    } catch {
+        return fail();
+    }
 }

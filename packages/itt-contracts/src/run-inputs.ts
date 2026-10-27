@@ -37,10 +37,12 @@ export function isInputShape(value: unknown): value is InputShape {
             switch (item.type) {
                 case 'text': case 'number': case 'boolean': case 'json': case 'file': case 'dir': case 'null': return allowed();
                 case 'literal': return allowed('value') && (item.value === null || ['string','boolean'].includes(typeof item.value) || (typeof item.value === 'number' && Number.isFinite(item.value)));
-                case 'array': return allowed('items') && visit(item.items,depth + 1);
+                case 'array': return allowed('items') && Object.hasOwn(item,'items') && visit(item.items,depth + 1);
                 case 'union': return allowed('options') && Array.isArray(item.options) && item.options.length > 0 && Array.from(item.options).every(option => visit(option,depth + 1));
-                case 'tuple': return allowed('items') && Array.isArray(item.items) && Array.from(item.items).every(part => property(part,true));
+                case 'tuple': return allowed('items') && Array.isArray(item.items) && Array.from(item.items).every(part => property(part,true)) &&
+                    Array.from(item.items).filter(part => (part as Record<string, unknown>).rest === true).length <= 1;
                 case 'object': return allowed('properties','additional','numericAdditional','numericKeys') && record(item.properties) && Object.values(item.properties).every(prop => property(prop)) && optionalBoolean(item,'numericKeys') &&
+                    (!Object.hasOwn(item,'numericKeys') || Object.hasOwn(item,'additional')) &&
                     ['additional','numericAdditional'].every(key => !Object.hasOwn(item,key) || visit(item[key],depth + 1));
                 default: return false;
             }
@@ -64,6 +66,11 @@ export function validOutputShapes(outputs: Record<string, unknown>, shapes: unkn
 
 /** Validate without coercing, dropping fields or inventing values. Errors identify the nested field. */
 export function validateInputShape(value: unknown, shape: InputShape, field = 'input'): void {
+    if (!isInputShape(shape)) throw new RunInputError(`${field}: invalid input shape`, field);
+    checkInputShape(value, shape, field);
+}
+
+function checkInputShape(value: unknown, shape: InputShape, field: string): void {
     const fail = (expected: string): never => { throw new RunInputError(`${field}: ${expected}`, field); };
     switch (shape.type) {
         case 'json': return;
@@ -79,28 +86,28 @@ export function validateInputShape(value: unknown, shape: InputShape, field = 'i
         case 'literal': if (value !== shape.value) fail(`expected ${JSON.stringify(shape.value)}`); return;
         case 'array':
             if (!Array.isArray(value)) return fail('expected a list');
-            value.forEach((item, index) => validateInputShape(item, shape.items, `${field}[${index}]`)); return;
+            value.forEach((item, index) => checkInputShape(item, shape.items, `${field}[${index}]`)); return;
         case 'object': {
             if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail('expected an object');
             const record = value as Record<string, unknown>;
             for (const [key, property] of Object.entries(shape.properties)) {
                 if (!Object.hasOwn(record, key)) {
                     if (!property.optional) throw new RunInputError(`${field}.${key}: required`, `${field}.${key}`);
-                } else validateInputShape(record[key], property.shape, `${field}.${key}`);
+                } else checkInputShape(record[key], property.shape, `${field}.${key}`);
             }
             // TypeScript is structurally typed: retain extra fields. Validate them only when an index signature declares their type.
             if (shape.additional) for (const [key, item] of Object.entries(record)) {
                 if (shape.numericKeys && (key.trim() === '' || !Number.isFinite(Number(key)))) fail(`expected a numeric key, received ${JSON.stringify(key)}`);
-                validateInputShape(item, shape.additional, `${field}.${key}`);
+                checkInputShape(item, shape.additional, `${field}.${key}`);
             }
             if (shape.numericAdditional) for (const [key, item] of Object.entries(record)) {
-                if (key.trim() !== '' && Number.isFinite(Number(key))) validateInputShape(item, shape.numericAdditional, `${field}.${key}`);
+                if (key.trim() !== '' && Number.isFinite(Number(key))) checkInputShape(item, shape.numericAdditional, `${field}.${key}`);
             }
             return;
         }
         case 'union': {
             for (const option of shape.options) {
-                try { validateInputShape(value, option, field); return; } catch (error) { if (!(error instanceof RunInputError)) throw error; }
+                try { checkInputShape(value, option, field); return; } catch (error) { if (!(error instanceof RunInputError)) throw error; }
             }
             return fail(`expected one of: ${shape.options.map(inputShapeLabel).join(' | ')}`);
         }
@@ -122,7 +129,7 @@ export function validateInputShape(value: unknown, shape: InputShape, field = 'i
                     }
                     if (index === length || !(item.rest ? current[index + 1] : next[index + 1])) continue;
                     try {
-                        validateInputShape(value[index], item.shape, `${field}[${index}]`);
+                        checkInputShape(value[index], item.shape, `${field}[${index}]`);
                         current[index] = 1;
                     } catch (error) {if (!(error instanceof RunInputError)) throw error;}
                 }
@@ -131,6 +138,7 @@ export function validateInputShape(value: unknown, shape: InputShape, field = 'i
             if (!next[0]) fail('tuple items do not match their declared types or length');
             return;
         }
+        default: fail(`unsupported shape type ${JSON.stringify((shape as {type?: unknown}).type)}`);
     }
 }
 
@@ -170,7 +178,13 @@ export function parseRunInputs(raw: unknown, schema: RunInputSchema, encoding?: 
         if (encoding === undefined) {
             // Existing CLI/schedule/history semantics: JSON/text are not reparsed and
             // legacy boolean '1' remains true. Unknown extra fields remain strings.
-            return [field, kind === 'number' ? Number(value) : kind === 'boolean' ? value === 'true' || value === '1' : value];
+            if (kind === 'number') {
+                const number = Number(value);
+                if (!value.trim() || !Number.isFinite(number))
+                    throw new RunInputError(`Invalid number run input: ${field} must be a finite number`, field);
+                return [field, number];
+            }
+            return [field, kind === 'boolean' ? value === 'true' || value === '1' : value];
         }
         if (!kind) throw new RunInputError(`Unknown run input: ${field}`, field);
         try {
