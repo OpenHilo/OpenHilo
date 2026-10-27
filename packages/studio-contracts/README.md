@@ -39,8 +39,10 @@ application data, manage application lifecycle, or register arbitrary pages.
 
 Build/test: `npm test --workspace @openhilo/studio-contracts` from the workspace.
 
-The `./ai-config` subpath provides the serializable Studio deployment selection and its strict parser (
-`AiExecutionConfig`, `SdkProfileConfig`, `parseAiExecutionConfig`). It contains no SDK, credentials or runtime services.
+The `./ai-config` subpath provides the serializable Studio deployment selection and its strict parser
+(`parseAiExecutionConfig`, which throws `AiExecutionConfigError`, plus the types `AiExecutionConfig`,
+`DirectAiExecutionConfig`, `CodexExecutionConfig`, `RoutedExecutionConfig` and `SdkProfileConfig`).
+It contains no SDK, credentials or runtime services.
 Both CommonJS and ESM entries are supplied; no server configuration implementation is included.
 
 ### AI configuration does not install an executor
@@ -52,6 +54,7 @@ or launch a provider. The application maps supported selections to its own resou
 | --- | --- |
 | `codex` | `@openhilo/ai-codex`, using a separately installed/authenticated Codex CLI |
 | `sdk` | `@openhilo/ai-sdk`, using explicitly configured OpenAI/Anthropic SDK clients |
+| `routed` | A `codex` or `sdk` configuration per type/level cell, dispatched by `configureAiRouting` from `@openhilo/ai-contracts/routing` (see [AI routing](../../docs/ai-routing.md)) |
 | `claude-code` | **None. External-application compatibility configuration only.** |
 
 `{ adapter: 'claude-code' }` remains accepted so external applications can read

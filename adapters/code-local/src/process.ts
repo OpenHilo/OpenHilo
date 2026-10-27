@@ -73,7 +73,8 @@ _itt_on_exit() {
 trap '_itt_on_exit' EXIT
 if [ -n "\${BASH_VERSION-}" ] && ! shopt -oq posix; then
   trap() {
-    if [ "\${BASHPID:-$$}" != "$$" ] || [ "$#" -eq 0 ] || [ "$1" = -p ] || [ "$1" = -l ]; then
+    # BASHPID needs Bash 4; BASH_SUBSHELL also identifies subshells on macOS /bin/bash 3.2.
+    if [ "\${BASH_SUBSHELL:-0}" != 0 ] || [ "\${BASHPID:-$$}" != "$$" ] || [ "$#" -eq 0 ] || [ "$1" = -p ] || [ "$1" = -l ]; then
       builtin trap "$@"
       return
     fi

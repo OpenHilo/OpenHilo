@@ -3,7 +3,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {registerProcess} from './process-registry';
 
 export type Message = {
-    id?: string | number;
+    id?: string | number | null;
     method?: string;
     params?: any;
     result?: any;
@@ -16,7 +16,7 @@ const KILL_GRACE_MS = 500;
 /** Owned stdio process: bounded framing, correlated requests, no shell or retries. */
 export class CodexTransport {
     private child: ChildProcessWithoutNullStreams;
-    private pending = new Map<number, {
+    private pending = new Map<string, {
         method: string;
         resolve(value: any): void;
         reject(error: Error): void;
@@ -77,17 +77,18 @@ export class CodexTransport {
     request(method: string, params: unknown, timeoutMs = 15000): Promise<any> {
         if (this.stopped) return Promise.reject(new Error('Codex transport is closed'));
         const id = ++this.nextId;
+        const key = String(id);
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
-                this.pending.delete(id);
+                this.pending.delete(key);
                 reject(new Error(`Codex ${method} request timed out`));
             }, timeoutMs);
-            this.pending.set(id, {method, resolve, reject, timer});
+            this.pending.set(key, {method, resolve, reject, timer});
             try {
                 this.send({id, method, params});
             } catch (error) {
                 clearTimeout(timer);
-                this.pending.delete(id);
+                this.pending.delete(key);
                 reject(error);
             }
         });
@@ -104,13 +105,18 @@ export class CodexTransport {
             const message = JSON.parse(line) as Message;
             if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error();
             if (message.method) this.receive(message);
-            else if (typeof message.id === 'number') {
-                const entry = this.pending.get(message.id);
+            else if (typeof message.id === 'number' || typeof message.id === 'string') {
+                // JSON-RPC ids may be numbers or strings; peers that stringify our numeric ids still correlate.
+                const key = String(message.id);
+                const entry = this.pending.get(key);
                 if (!entry) return;
-                this.pending.delete(message.id);
+                this.pending.delete(key);
                 clearTimeout(entry.timer);
                 if (message.error) entry.reject(new Error(`Codex ${entry.method} protocol request failed (${message.error.code}). Check the CLI configuration and app-server compatibility; update Codex or this adapter if needed.`));
                 else entry.resolve(message.result);
+            } else if (message.id === null && message.error) {
+                // A null-id error cannot be correlated: the peer could not read one of our requests.
+                this.fail(new Error(`Codex rejected an unreadable request (${message.error.code}). Check the CLI configuration and app-server compatibility.`));
             }
         } catch {
             this.fail(new Error('Invalid Codex protocol message'));

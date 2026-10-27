@@ -11,7 +11,10 @@ export interface SdkConnection {
     maxOutputTokens?: number;
 }
 
-/** Explicit credentials/endpoints; SDK environment defaults and HTTP retries are disabled. No I/O at construction. */
+/**
+ * Explicit credentials/endpoints; SDK credential, organization/project and base-URL environment defaults and HTTP
+ * retries are disabled. The SDKs still honor their *_CUSTOM_HEADERS and *_LOG variables. No I/O at construction.
+ */
 export function createSdkTaskExecutor(profiles: Record<string, SdkConnection>, defaultProfile: string, options: {
     id?: string;
     timeoutMs?: number;
@@ -22,6 +25,7 @@ export function createSdkTaskExecutor(profiles: Record<string, SdkConnection>, d
         if (profile.provider === 'openai') return [name, {
             ...common, provider: 'openai', client: new OpenAI({
                 apiKey: profile.apiKey,
+                adminAPIKey: null,
                 baseURL: profile.baseURL ?? 'https://api.openai.com/v1',
                 maxRetries: 0, timeout: options.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
                 organization: null,

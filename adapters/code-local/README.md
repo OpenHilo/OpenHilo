@@ -22,8 +22,12 @@ const executor = createDispatcher({
 ```
 
 Pass the resulting executor to the runtime engine or run-service resource factory. `executeCode` and `executePython`
-expose the lower-level process API; `CodeExecutionResult` is separate from the AI task result. `ExecutionError` shares
-the runtime-contracts implementation with legacy callers.
+expose the lower-level process API; `CodeExecutionResult` is separate from the AI task result. Spawn and missing
+working-directory failures throw `ExecutionError` from `@openhilo/runtime-contracts` (not re-exported here), shared
+with legacy callers. The remaining exports (`assertOutputNames`, `assertSafeEnvInputs`, `subprocessEnv`,
+`generateBashPrologue`, `parseBashOutputFile`, `validateBashOutput`, `makeFileRef` and the config/result types; the
+`./types` subpath carries `CodeProcessError` and the types alone) are the building blocks of this protocol, exposed for
+legacy callers and tests rather than as a separately versioned API.
 
 Bash receives environment values; Python receives JSON values as globals, preserving numbers, booleans and objects. File
 references become workspace paths. Declared outputs are validated and converted to ITT values; `stdout`, `stderr` and
@@ -37,6 +41,8 @@ code can branch on that result. If business outputs are declared, missing or
 invalid values still fail instead of inventing a result. File and directory
 outputs must exist with the declared filesystem kind; an empty path is invalid.
 
+Workflow node `lang` must be `bash` (the default when omitted), `py` or `python`; any
+other value is rejected before launch rather than being run by a different interpreter.
 Bash workflow nodes always execute with Bash, regardless of the declared outputs.
 Direct `executeCode` callers can pass `shell: 'bash'` or `shell: 'sh'`. Omitting
 `shell` preserves the legacy choice: Bash with business outputs, otherwise sh.

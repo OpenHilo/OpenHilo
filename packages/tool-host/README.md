@@ -22,8 +22,10 @@ const host = createToolHost([{
 // Supply host as ExecutionHost.tools to an executor supporting tools.
 ```
 
-Schemas use synchronous JSON Schema draft-07, compiled at registration. Unknown
-keywords/formats and duplicate tool names fail early. Arguments are checked
+`createToolHost(tools)` accepts `RegisteredTool` entries (a `ToolDefinition` plus
+`handler(args, {callId, signal})` and optional `readOnly`). The top-level schema must
+have `type: 'object'`. Schemas use synchronous JSON Schema draft-07, compiled at registration. Unknown
+keywords/formats, async schemas and duplicate tool names fail early. Arguments are checked
 without coercion, default insertion or property removal; output must be JSON.
 Ajv 8 performs validation, with `ajv-formats` preserving standard formats such
 as email and date; invalid calendar dates are rejected. Unsupported draft-04
@@ -34,9 +36,14 @@ Schemas and handlers are trusted application code, not an untrusted-code sandbox
 Cancellation before dispatch prevents invocation. After dispatch the handler
 receives the signal and the host awaits its completion/cleanup; it cannot forcibly
 stop a handler that ignores cancellation. Late success remains authoritative.
-Handler failure is `tool_failed` for explicitly read-only operations, otherwise
-`outcome_unknown`, with `safeToReplay: false`. Invalid output is also unsafe to
-replay after a mutating handler. No failure triggers an automatic retry.
+Handler failure is `tool_failed` with `safeToReplay: true` for explicitly read-only
+operations, otherwise `outcome_unknown` with `safeToReplay: false`. Invalid output
+(`invalid_output`) follows the same rule: replayable only after a read-only handler.
+Envelope, unknown-tool and argument-validation failures are `invalid_request`, and
+cancellation before dispatch is `tool_failed`; these never reach a handler and are
+`safeToReplay: true`. All failures have `retryable: false`. No failure triggers an
+automatic retry. `readOnly` is the registering application's declaration (see
+[SECURITY.md](../../SECURITY.md)); the host cannot verify it.
 
 `callId` is correlation metadata. This registry does not deduplicate calls or
 provide exactly-once execution. Persisted side effects need application-owned

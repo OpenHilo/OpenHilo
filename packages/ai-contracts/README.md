@@ -17,7 +17,7 @@ continue 表示继续会话；reconnect 表示重连；二者均不自动保证�
 available 是带观测时间的快照，不能保证随后执行一定成功。缺失用量不表示零。
 advisory 预算只是目标，hard 预算必须通过能力检查。
 
-测试专用 ScriptedExecutor 支持输出和串行提问，支持宿主取消与期限；不执行工具、不访问工作区、不报告用量、不持久化、不续接会话。
+测试专用 ScriptedExecutor（位于 `tests/support`，不属于公共导出）支持输出和串行提问，支持宿主取消与期限；不执行工具、不访问工作区、不报告用量、不持久化、不续接会话。
 问题选项默认是建议项（optionsMode=suggested），允许自由回答或附加上下文；显式 exclusive 才限制答案为选项值。
 每个 questionId 在一次尝试中唯一；重复已接受的回答返回 duplicate，内容不替换原回答；终止后其他回答返回 closed。
 Runtime dispatcher 和生成服务通过本包连接独立 AI 适配器。
@@ -31,7 +31,10 @@ Runtime dispatcher 和生成服务通过本包连接独立 AI 适配器。
 ## Cooperative execution helper
 
 `createTaskExecution(request, host, operation)` implements ordered events, correlated
-questions, terminal output validation, cancellation and deadlines for adapter authors.
+questions, terminal output validation (including `request.outputShapes`), cancellation and deadlines for adapter authors.
+The operation receives a `TaskOperationContext` (`signal`, `emit`, `ask`). `DEFAULT_AI_TIMEOUT_MS` is the twelve-hour
+default budget; `AI_CONTRACT_VERSION` is `1`. Validation failures throw `ContractError`, whose `failure` property is the
+public `Failure` object.
 Call `assertCanStart` first. The operation receives an abort signal and must stop its
 work and finish cleanup before settling. A cancellation request does not roll back
 prior tool effects. `cancel()` waits for cleanup; a backend that ignores the signal
@@ -90,7 +93,7 @@ that do not use this helper must supply equivalent health events to participate.
 
 ## Type and level routing
 
-The optional `@openhilo/ai-contracts/routing` entry provides `configureAiRouting(routes, factory)`. It resolves `TaskRequest.aiSelection`, delegates to one configured executor and wraps its sessions. It adds no provider dependency or retry policy. See [AI routing](../../docs/ai-routing.md) for the host contract and a runnable example.
+The optional `@openhilo/ai-contracts/routing` entry provides `configureAiRouting(routes, factory)`. It resolves `TaskRequest.aiSelection`, delegates to one configured executor and wraps its sessions. It adds no provider dependency or retry policy. The entry also exports the shape-only `parseAiRoutes`, the resulting `RoutingTaskExecutor` class and the `AiRoutes`/`ConfiguredAiTarget` types. A target result carrying a malformed session reference settles as a non-replayable `executor_failed` result. See [AI routing](../../docs/ai-routing.md) for the host contract and a runnable example.
 
 ### Nested output contracts
 

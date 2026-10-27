@@ -89,6 +89,20 @@ test('frame limit counts bytes and stops buffering once exceeded', {timeout: 100
     assert.deepEqual(flood.failures, ['Codex protocol frame exceeded 4 MiB']);
 });
 
+test('replies with string JSON-RPC ids settle their requests', {timeout: 10000}, async t => {
+    const s = setup(t, 'string-id');
+    assert.deepEqual(await s.transport.request('first', {}, 2000), {ok: true, id: '1'});
+    assert.deepEqual(await s.transport.request('second', {}, 2000), {ok: true, id: '2'});
+    assert.deepEqual(s.failures, []);
+});
+
+test('an uncorrelated null-id error fails pending requests instead of waiting for the timeout', {timeout: 10000}, async t => {
+    const s = setup(t, 'null-id-error');
+    const started = Date.now();
+    await assert.rejects(s.transport.request('ping', {}, 5000), /unreadable request \(-32700\)/);
+    assert.ok(Date.now() - started < 2000);
+});
+
 for (const [name, trigger, expected] of [
     ['SIGINT', child => child.kill('SIGINT'), {signal: 'SIGINT'}],
     ['process.exit', child => child.stdin.end('exit'), {code: 3}],

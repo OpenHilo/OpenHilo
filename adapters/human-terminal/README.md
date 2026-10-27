@@ -13,7 +13,9 @@ const humanExecutor = new TerminalHumanExecutor();
 
 Every declared output field is collected directly. The adapter does not invent business actions, prefill other fields,
 or infer what a field means. A workflow can branch on the submitted values. String inputs are displayed as readable
-text, retaining their line breaks.
+text, retaining their line breaks and tabs. Other terminal control characters (including ANSI escape sequences and bare
+carriage returns) and Unicode bidirectional overrides in the prompt, input names/values and field names are shown as
+`\uXXXX` escapes, so task text cannot redraw the screen or disguise what is being approved.
 
 Invalid numbers or JSON and invalid menu choices are requested again. Text whitespace is preserved. Each submission
 contains only `taskId`, a generated UUID `submissionId`, and `outputs`. Accepted and duplicate receipts complete
@@ -29,7 +31,7 @@ reading, so it does not keep the host alive. Call `executor.close()` (or use `us
 
 `TerminalHumanExecutorOptions` also accepts `promptFn(prompt, signal?) => Promise<string>` and `write(text) => void` for
 embedding. An injected prompt should release its own resources on cancellation; the adapter settles even if that prompt
-ignores its signal. The default executor ID is `terminal`.
+ignores its signal. The executor ID is always `terminal`; it is not configurable.
 
 Build with `npm run build --workspace @openhilo/human-terminal`; run `npm test --workspace @openhilo/human-terminal`
 after building dependencies. Tests include real subprocess checks for numbered results, whitespace, EOF and

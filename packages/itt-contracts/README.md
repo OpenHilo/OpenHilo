@@ -16,7 +16,7 @@ provides string wire-format validation for Runtime and custom hosts, including H
 endpoint or UI is included. Numbers use complete
 decimal/scientific syntax and must be finite; booleans accept exactly `true`/`false`; JSON must parse without non-finite
 numbers, including nested values. Complete submissions reject missing and unknown fields before returning any output.
-Empty text and text whitespace are preserved. File/dir human outputs are path strings; parsing does not
+Negative zero is rejected for numbers and nested JSON numbers. Empty text and text whitespace are preserved. File/dir human outputs are path strings; parsing does not
 check files, grant filesystem access or convert them into FileRef objects.
 
 The human-output subpath supplies CommonJS and a self-contained ESM entry. Both come from the same TypeScript source and
@@ -27,11 +27,20 @@ have no runtime dependencies or filesystem access. The root entry provides the g
 `typed-text-v1` decodes against the input schema exactly once, rejects missing/unknown fields, non-finite numbers and
 negative zero, and preserves JSON strings distinctly from objects. When an input has optional `shape` metadata,
 `validateInputShape` validates nested fields, array elements, tuple lengths, literals and unions with a field path
-in each error. `InputShape` and `inputShapeLabel` let hosts render the same schema. No values are coerced or removed.
+in each error. `InputShape` and `inputShapeLabel` let hosts render the same schema; `isInputShape` checks that untrusted
+metadata is a well-formed shape, and `validOutputShapes(outputs, shapes)` checks that a shape map only refines declared
+output fields (the AI task contract uses it for `outputShapes`). No values are coerced or removed.
 This applies to typed workflow entry inputs, not to all internal calls or outputs. Without an encoding, historical CLI conversion
 remains: Number for numeric fields, true/1 for booleans, literal strings for JSON/text. The runtime applies its JSON
 persistence checks afterward. See [run input encoding](../../docs/embedding.md#run-input-encoding) for
 examples and compatibility boundaries.
+
+`@openhilo/itt-contracts/ai-selection` exports `AI_TYPES`, `AI_LEVELS`, the `AiType`/`AiLevel`/`AiSelection` types and
+`parseAiSelection`, which accepts only a plain object with optional known `type`/`level` values and throws otherwise. It
+is selection data for [AI routing](../../docs/ai-routing.md); it selects no provider. CJS and ESM entries are supplied.
+
+The validator does not check a code node's `lang`; executors reject languages they do not implement (the local Code
+adapter accepts `bash`, `py` and `python`).
 
 Compiled CFGs may declare `expressionSemantics: "plain-data"` to prevent structural FileRef projection during expression
 evaluation. Only explicit file/dir boundaries project paths in that mode. The validator rejects other metadata values.

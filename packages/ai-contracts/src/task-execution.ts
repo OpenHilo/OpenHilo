@@ -247,7 +247,7 @@ export function createTaskExecution(
                     throw new Error('Operation returned an invalid terminal result');
                 }
                 if (outcome.status === 'completed') {
-                    outcome = {...outcome, outputs: validateOutputs(task.output, outcome.outputs)};
+                    outcome = {...outcome, outputs: validateOutputs(task.output, outcome.outputs, task.outputShapes)};
                 }
                 // The operation must await all questions; silently dropping one loses user input.
                 if (pending.size && !stopped) throw new Error('Operation ended with unanswered questions');

@@ -383,6 +383,28 @@ test('workspace tools reject repository metadata regardless of path case', async
     }
 });
 
+test('workspace_read rejects hard links to files outside the workspace', async () => {
+    const {localWorkspace} = require('../dist/workspace');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-hardlink-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-hardlink-outside-'));
+    try {
+        await fs.writeFile(path.join(outside, 'secret'), 'top secret');
+        await fs.link(path.join(outside, 'secret'), path.join(dir, 'linked'));
+        await fs.writeFile(path.join(dir, 'plain'), 'ok');
+        const workspace = await localWorkspace({id: dir, uri: pathToFileURL(dir).href});
+        const tool = name => workspace.tools.find(item => item.name === name);
+        const context = {callId: 'c', signal: new AbortController().signal};
+        await assert.rejects(tool('workspace_read').handler({path: 'linked'}, context), /hard-linked/);
+        assert.deepEqual(await tool('workspace_read').handler({path: 'plain'}, context), {content: 'ok'});
+        await tool('workspace_write').handler({path: 'linked', content: 'replaced'}, context);
+        assert.equal(await fs.readFile(path.join(outside, 'secret'), 'utf8'), 'top secret');
+        assert.deepEqual(await tool('workspace_read').handler({path: 'linked'}, context), {content: 'replaced'});
+    } finally {
+        await fs.rm(dir, {recursive: true, force: true});
+        await fs.rm(outside, {recursive: true, force: true});
+    }
+});
+
 test('partial usage remains unknown rather than reporting missing tokens as zero', async () => {
     const h = harness('openai', [response('openai', [call('missing', 'unknown_tool', {})], {usage: undefined}), finish()]);
     const events = [];

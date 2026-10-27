@@ -98,6 +98,22 @@ test('all declared business fields are collected without preset answers or actio
     }
 });
 
+test('terminal control sequences in task text are displayed escaped, not executed', async () => {
+    const h = host(), prompts = [], writes = [];
+    await new TerminalHumanExecutor(answers(['1'], prompts, writes)).present({
+        ...request,
+        prompt: 'Approve?\u001b[2J\u001b[H',
+        inputs: {report: 'Line 1\r\nLine 2\rhidden\u009b31m\u202eevil\tend', data: {name: '\u202edoc.exe'}},
+        outputs: {approved: 'boolean'}
+    }, h);
+    const output = writes.join('');
+    assert.doesNotMatch(output, /[\u001b\r\u009b\u202e]/);
+    assert.match(output, /Approve\?\\u001b\[2J\\u001b\[H/);
+    assert.match(output, /Line 1\nLine 2\\u000dhidden\\u009b31m\\u202eevil\tend/);
+    assert.match(output, /"name": "\\u202edoc\.exe"/);
+    assert.deepEqual(h.submissions[0].outputs, {approved: 'true'});
+});
+
 test('unsuccessful receipts fail meaningfully and duplicates are successful', async () => {
     for (const status of ['invalid', 'stale', 'conflict']) {
         await assert.rejects(new TerminalHumanExecutor(answers(['1'])).present(request, host(status)), new RegExp(`${status}.*Receipt detail`));
@@ -266,6 +282,25 @@ test('consecutive tasks share buffered piped lines, an abandoned read keeps its 
     assert.equal(child.status, 0, child.stdout + child.stderr);
     assert.deepEqual(child.stderr.trim().split('\n'), ['{"a":"first"}', '{"a":"second"}', 'aborted', '{"a":"third"}',
         'Human terminal input closed (EOF) before submission', 'Human terminal input closed (EOF) before submission']);
+});
+
+test('a new executor created after stdin reached EOF fails immediately instead of hanging', () => {
+    const {spawnSync} = require('node:child_process');
+    const source = `const { TerminalHumanExecutor } = require('./dist');
+      const req = ${JSON.stringify({...request, outputs: {a: 'text'}})};
+      const host = { signal: new AbortController().signal, async submit() { throw new Error('must not submit'); } };
+      (async () => {
+        await new TerminalHumanExecutor({write() {}}).present({...req, taskId: 't1'}, host).catch(error => console.error(error.message));
+        await new TerminalHumanExecutor({write() {}}).present({...req, taskId: 't2'}, host).catch(error => console.error(error.message));
+      })();`;
+    const child = spawnSync(process.execPath, ['-e', source], {
+        cwd: require('node:path').resolve(__dirname, '..'),
+        input: '',
+        encoding: 'utf8',
+        timeout: 5000
+    });
+    assert.equal(child.status, 0, child.stdout + child.stderr);
+    assert.deepEqual(child.stderr.trim().split('\n'), ['Human terminal input closed (EOF) before submission', 'Human terminal input closed (EOF) before submission']);
 });
 
 test('a waiting read cancelled by abort does not swallow the next line', async () => {

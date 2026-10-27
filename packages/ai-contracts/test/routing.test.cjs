@@ -82,6 +82,18 @@ test('target failure is not converted to replayable failure or retried',async()=
  const router=routing(routes(),c=>({identity:{model:c.model},executor:{id:c.model,capabilities:['structured_output'],async start(r,h){calls++;return createTaskExecution(r,h,async()=>({status:'failed',error:failure}));}}}));
  const result=await(await router.start(request(),host())).result;assert.deepEqual(result.error,failure);assert.equal(calls,1);
 });
+test('a malformed target session settles as a failed result instead of rejecting',async()=>{
+ const events=[];
+ const router=routing({default:{defaultLevel:'medium',levels:{medium:{}}}},c=>({identity:c,executor:{id:'bad-session',capabilities:['structured_output'],async start(req,h){return createTaskExecution(req,h,async()=>({status:'completed',outputs:{value:'x'},artifacts:[],session:{executorId:'someone-else',version:1,opaqueId:'s'}}));}}}));
+ const result=await(await router.start(request(),host(events))).result;
+ assert.equal(result.status,'failed');assert.equal(result.error.code,'executor_failed');assert.equal(result.error.safeToReplay,false);
+ assert.deepEqual(events.at(-1).result,result);
+});
+test('the cooperative helper enforces nested outputShapes at completion',async()=>{
+ const req={...request(),output:{plan:'json'},outputShapes:{plan:{type:'object',properties:{urls:{shape:{type:'array',items:{type:'text'}}}}}}};
+ const result=await createTaskExecution(req,host(),async()=>({status:'completed',outputs:{plan:{urls:[1]}},artifacts:[]})).result;
+ assert.equal(result.status,'failed');assert.equal(result.error.code,'invalid_output');assert.match(result.error.message,/plan\.urls/);
+});
 test('search is a routing label, with arbitrary typed business outputs and no imposed tools or citations',async()=>{
  const output={found:'boolean',count:'number',summary:'text'};
  const router=routing({default:{defaultLevel:'medium',levels:{medium:{}}},search:{defaultLevel:'light',levels:{light:{}}}},c=>({identity:c,executor:{id:'search-fixture',capabilities:['structured_output'],async start(req,h){assert.deepEqual(req.requiredCapabilities,[]);return createTaskExecution(req,h,async()=>({status:'completed',outputs:{found:true,count:2,summary:'two matches'},artifacts:[]}))}}}));

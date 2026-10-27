@@ -1,3 +1,4 @@
+import {constants as fsConstants} from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {fileURLToPath, pathToFileURL} from 'url';
@@ -61,9 +62,15 @@ export async function localWorkspace(workspace: NonNullable<ExecutionHost['works
             readOnly: true,
             async handler(args, {signal}) {
                 const target = await resolve(args.path as string);
-                const stat = await fs.stat(target);
-                if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('File must be regular and at most 1 MiB');
-                return {content: await fs.readFile(target, {encoding: 'utf8', signal})};
+                const file = await fs.open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+                try {
+                    const stat = await file.stat();
+                    if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('File must be regular and at most 1 MiB');
+                    if (stat.nlink > 1) throw new Error('Workspace tools do not read hard-linked files');
+                    return {content: await file.readFile({encoding: 'utf8', signal})};
+                } finally {
+                    await file.close();
+                }
             }
         },
         {

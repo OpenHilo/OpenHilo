@@ -40,6 +40,8 @@ The host maps `cli_path` → `cliPath`, `timeout_ms` → `timeoutMs` and
 The parser does not instantiate an executor or read a deployment file. See the
 [configuration boundary](../../packages/studio-contracts/README.md#ai-configuration-does-not-install-an-executor).
 
+Constructor defaults: `cliPath` is `codex`, `sandbox` is `workspace-write`, `id` is `openhilo.codex`, and an omitted
+`effort` uses Codex's own default. Invalid options throw at construction.
 Optional `model` selects a CLI model; omitted means Codex's configured default. Optional `codex_home` selects a separate
 CLI home, including its authentication/configuration. Credentials remain owned by Codex and are never embedded in
 session references. Constructor/configuration reads do not launch Codex. A React 19 application can explicitly import
@@ -62,7 +64,8 @@ a server.
   fail explicitly. No bypass-sandbox flags are used.
 - Cancellation interrupts the active turn and terminates the owned process group; deadlines also cover initialization.
   Host tool implementations must honor their AbortSignal. Frames are bounded to 4 MiB; stderr is drained but never
-  retained in task history.
+  retained in task history. JSON-RPC responses may use numeric or string ids; an uncorrelated error response
+  (`id: null`) fails the attempt rather than waiting for a request timeout.
 - Usage is the reported cumulative token delta for this attempt, not just the final inference. Unknown usage/cost stays
   absent. Timeout is a duration bound, not a token or cost cap. Even a tiny task can include a large CLI system/context
   prompt.
@@ -74,7 +77,8 @@ a server.
 
 ## Validation
 
-`npm run test:offline` uses executable local protocol fixtures and forbids the real `codex` command. Adapter tests cover
+`npm run test:offline` (from the repository root) uses executable local protocol fixtures and forbids the real
+`codex` command; `npm test --workspace @openhilo/ai-codex` runs only this package's tests. Adapter tests cover
 output errors, tool/question forwarding, cancellation, initialization timeout, session binding, cross-thread requests
 and denied approvals. Live tests must be deliberately separate, short and user-authorized.
 

@@ -26,6 +26,8 @@ class SharedLineReader {
     private users = 0;
 
     constructor() {
+        // A readline created on an already-ended stdin never emits 'close'.
+        this.closed = process.stdin.readableEnded || process.stdin.destroyed;
         this.readline = createInterface({input: process.stdin, output: process.stdout});
         this.readline.on('line', line => {
             const waiter = this.waiters.values().next().value;
@@ -90,6 +92,16 @@ class SharedLineReader {
     }
 }
 
+/**
+ * Task text can originate from AI or external data. Escape terminal control characters and bidirectional
+ * overrides so it cannot move the cursor, clear the screen or disguise what the user is approving.
+ */
+function printable(text: string): string {
+    return text.replace(/\r\n/g, '\n')
+        .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
+            char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 function eofError(): Error {
     return new Error('Human terminal input closed (EOF) before submission');
 }
@@ -128,11 +140,11 @@ export class TerminalHumanExecutor implements HumanExecutor {
         });
         const ask = (text: string) => abortable(() => prompt(text, signal), signal);
         try {
-            write(`${request.prompt}\n`);
+            write(`${printable(request.prompt)}\n`);
             for (const [name, value] of Object.entries(request.inputs)) {
-                write(`${name}:\n${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}\n`);
+                write(`${printable(name)}:\n${printable(typeof value === 'string' ? value : JSON.stringify(value, null, 2))}\n`);
             }
-            const schema = Object.entries(request.outputs).map(([field, kind]) => `${field} (${kind})`).join(', ');
+            const schema = Object.entries(request.outputs).map(([field, kind]) => `${printable(field)} (${kind})`).join(', ');
             write(`Outputs: ${schema || 'none'}\n`);
             const choose = async (labels: readonly string[]): Promise<number> => {
                 labels.forEach((label, index) => write(`${index + 1}. ${label}\n`));
@@ -147,12 +159,12 @@ export class TerminalHumanExecutor implements HumanExecutor {
             if (!Object.keys(request.outputs).length) await choose(['Completed']);
             for (const [field, kind] of Object.entries(request.outputs)) {
                 if (kind === 'boolean') {
-                    write(`${field} (${kind}):\n`);
+                    write(`${printable(field)} (${kind}):\n`);
                     values.push([field, await choose(['Yes', 'No']) === 0 ? 'true' : 'false']);
                     continue;
                 }
                 for (; ;) {
-                    const raw = await ask(`${field} (${kind}): `);
+                    const raw = await ask(`${printable(field)} (${kind}): `);
                     try {
                         parseHumanOutputValue(raw, kind, field);
                         values.push([field, raw]);

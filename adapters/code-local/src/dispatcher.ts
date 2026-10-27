@@ -25,6 +25,8 @@ function toPythonInputValue(v: Value, workspaceDir: string): unknown {
     return v;
 }
 
+const LANGUAGES = new Set(['bash', 'py', 'python']);
+
 /** Preserve the Bash/Python node ABI behind Runtime's executor port. */
 type Implementations = {executeCode: typeof executeCode; executePython: typeof executePython};
 export function createCodeExecutor(workdir: string, options?: CodeExecutionOptions, implementations?: Implementations): ExecutorFn;
@@ -36,8 +38,9 @@ export function createCodeExecutor(workdir: string, optionsOrImplementations: Co
     const options = normalizeOptions(legacy ? {} : optionsOrImplementations);
     return async (node, inputs) => {
         if (node.type !== 'call' || node.executor !== 'code') throw new Error('Local code executor requires a code call node');
-        try {
         const lang = node.lang ?? 'bash';
+        if (!LANGUAGES.has(lang)) throw new Error(`Local code executor does not support lang '${lang}'; use 'bash', 'py' or 'python'`);
+        try {
         // Stream captures are not business variables in the script.
         const RESERVED = new Set(['stdout', 'stderr', 'exit_code']);
         const declaredOutputs = Object.fromEntries(

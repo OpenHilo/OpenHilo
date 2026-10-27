@@ -25,6 +25,16 @@ const executor = new SdkTaskExecutor({
 });
 ```
 
+`createSdkTaskExecutor(profiles, defaultProfile, {id?, timeoutMs?})` builds the same executor from
+`SdkConnection` entries (`provider`, `model`, `apiKey`, optional `baseURL` and `maxOutputTokens`). It requires a
+non-empty `apiKey`, uses the official endpoints when `baseURL` is omitted and disables SDK retries plus the SDKs'
+credential, organization/project and base-URL environment defaults. The SDKs still honor their own
+`OPENAI_CUSTOM_HEADERS`/`ANTHROPIC_CUSTOM_HEADERS` and `*_LOG` variables. Profile types are exported as
+`ModelProfile`, `OpenAIProfile` and `AnthropicProfile`; `SdkExecutorOptions` also accepts `maxTurns`,
+`maxToolCalls` and `maxSessions` (defaults below); profiles accept an optional `maxOutputTokens`. Invalid executor
+options throw a `ContractError` (`invalid_request`) at construction; the factory throws a plain `Error` for a
+missing `apiKey` or unsupported provider.
+
 Model names and clients are explicit configuration. `TaskRequest.profile` selects
 a configured profile; unknown profiles fail before a request. Public task data and
 session references contain no credentials. Both clients are the official SDK
@@ -41,7 +51,11 @@ instances, so callers can configure supported endpoints or custom transports.
 - A local `file:` workspace enables `workspace_read`, `workspace_list` and
   `workspace_write`. Writes create parents and replace files via a temporary file
   and rename. Read/write content is limited to 1 MiB/1,048,576 characters. Tools
-  reject paths outside the root, symlink traversal and `.git` metadata. These path
+  reject paths outside the root, symlink traversal and `.git` metadata.
+  `workspace_read` also rejects regular files with more than one hard link, because
+  a hard link can expose a file outside the root (this includes package-manager
+  stores that hard-link `node_modules`). Writes replace the link rather than the
+  linked file. These path
   checks are not a hostile-filesystem sandbox against concurrent directory swaps.
 - `finish_task` must be alone in its turn. Its declared fields are validated;
   file/directory outputs must exist inside the workspace and yield artifact URIs.
@@ -111,7 +125,7 @@ API references checked for this implementation:
 [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling),
 [Anthropic tool results](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls),
 [Anthropic TypeScript SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/typescript).
-Pinned SDK types: OpenAI 6.32.0 and Anthropic 0.128.0.
+Pinned SDK types: OpenAI 7.43.0 and Anthropic 1.2.0.
 
 ## Legacy JSON completion compatibility
 

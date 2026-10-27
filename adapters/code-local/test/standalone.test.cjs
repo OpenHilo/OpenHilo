@@ -39,6 +39,22 @@ test('packed Bash/Python adapter preserves typed inputs, files and outputs', asy
     assert.deepEqual(python.outputs.data, {enabled: true, items: [1, 2]});
 });
 
+test('unsupported code languages are rejected instead of running as Bash', async t => {
+    const root = workspace(t), execute = createCodeExecutor(root);
+    for (const lang of ['javascript', 'node', 'sh', 'Python']) {
+        await assert.rejects(execute({
+            id: 'other', type: 'call', executor: 'code', lang,
+            script: 'touch ran.txt', outputs: {}, inputsFrom: {}, outputsTo: {}, next: 'END'
+        }, {}), new RegExp(`does not support lang '${lang}'`));
+    }
+    assert.equal(fs.existsSync(path.join(root, 'ran.txt')), false);
+    const py = await execute({
+        id: 'py', type: 'call', executor: 'code', lang: 'py',
+        script: 'value = 1', outputs: {value: 'number'}, inputsFrom: {}, outputsTo: {}, next: 'END'
+    }, {});
+    assert.equal(py.outputs.value, 1);
+});
+
 test('signal termination and Python SystemExit retain unsuccessful exit codes', async t => {
     const root = workspace(t);
     assert.equal((await executeCode({command: 'kill -TERM $$', envVars: {}, workingDir: root})).exitCode, 143);

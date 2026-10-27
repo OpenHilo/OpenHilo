@@ -94,7 +94,12 @@ export class RoutingTaskExecutor implements AiTaskExecutor {
         return {route:decoded.route,session:clone(inner)};
     }
     private result(result: TaskResult, route: string): TaskResult {
-        return result.session ? {...result,session:this.wrap(result.session,route)} : result;
+        if (!result.session) return result;
+        // The authoritative result must still settle when a target reports a malformed session.
+        try { return {...result,session:this.wrap(result.session,route)}; }
+        catch {
+            return {status:'failed',error:{code:'executor_failed',message:'AI routing: target returned an invalid session reference',retryable:false,safeToReplay:false},...(result.usage ? {usage:result.usage} : {})};
+        }
     }
     private host(host: ExecutionHost, route: string): ExecutionHost {
         return {...host,onEvent:event=>host.onEvent(event.type==='terminal' ? {...event,result:this.result(event.result,route)} : event)};

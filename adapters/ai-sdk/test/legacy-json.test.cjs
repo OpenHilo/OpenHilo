@@ -51,6 +51,35 @@ test('legacy JSON completion works through the independent SDK export with offli
     assert.equal(calls, 1);
 });
 
+test('legacy JSON completion does not read OpenAI organization, project or admin key from the environment', async t => {
+    const saved = {};
+    for (const [name, value] of Object.entries({OPENAI_ORG_ID: 'org-env', OPENAI_PROJECT_ID: 'proj-env', OPENAI_ADMIN_KEY: 'admin-env'})) {
+        saved[name] = process.env[name];
+        process.env[name] = value;
+    }
+    t.after(() => {
+        for (const [name, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+        }
+    });
+    let headers;
+    global.fetch = async (_url, init) => {
+        headers = new Headers(init.headers);
+        return new Response(JSON.stringify({id: 'fixture', choices: [{message: {role: 'assistant', content: '{}'}}]}),
+            {status: 200, headers: {'content-type': 'application/json'}});
+    };
+    const executor = new LegacyJsonCompletionExecutor({base_url: 'http://offline.invalid/v1', api_key: 'fake', model: 'offline'});
+    const execution = await executor.start({
+        version: 1, taskId: 'env', instruction: 'Select', inputs: {}, output: {value: 'json'},
+        requiredCapabilities: ['structured_output']
+    }, {attemptId: 'attempt', signal: new AbortController().signal, onEvent() {}});
+    assert.equal((await execution.result).status, 'completed');
+    assert.equal(headers.get('authorization'), 'Bearer fake');
+    assert.equal(headers.get('openai-organization'), null);
+    assert.equal(headers.get('openai-project'), null);
+});
+
 test('legacy JSON completion owns retries and does not truncate JSON at a tiny token cap', async () => {
     let calls = 0;
     global.fetch = async (_url, init) => {

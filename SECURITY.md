@@ -5,7 +5,10 @@ provide an OS sandbox or multi-tenant authorization.
 Only execute source and extension handlers you trust. Code runs with host
 permissions. AI workspace access and tools are explicit grants; a CLI sandbox
 does not constrain a separate host tool or Code executor. A tool's read-only flag
-is a declaration by its implementation, not an OS-enforced policy.
+is a declaration by its implementation, not an OS-enforced policy. The SDK
+adapter's workspace path checks (symlinks, hard links, `.git`) are not a sandbox
+against a concurrently modified directory. Local Code subprocesses inherit only an
+allowlisted environment; credentials must be passed explicitly through `env`.
 
 Do not include secrets in workflow files, snapshots, logs, examples or issues.
 API credentials stay in the selected client's configuration/environment; Codex

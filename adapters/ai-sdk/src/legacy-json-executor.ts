@@ -82,7 +82,7 @@ export class LegacyJsonCompletionExecutor implements AiTaskExecutor {
                 try {
                     // This loop owns retries and the deadline; SDK defaults would multiply both.
                     const client = new OpenAI({baseURL: this.config.base_url, apiKey: this.config.api_key,
-                        maxRetries: 0, timeout: COMPLETION_TIMEOUT_MS});
+                        adminAPIKey: null, organization: null, project: null, maxRetries: 0, timeout: COMPLETION_TIMEOUT_MS});
                     let timeoutId: ReturnType<typeof setTimeout> | undefined;
                     const response = await Promise.race([
                         aborted,

@@ -38,6 +38,8 @@ process.stdin.on('data', chunk => {
         } else if (mode === 'multibyte-limit') {
             // 1.5M three-byte characters: under 4 MiB characters, over 4 MiB bytes.
             send({id: m.id, result: {text: '中'.repeat(1.5 * 1024 * 1024)}});
-        } else send({id: m.id, result: {ok: true}});
+        } else if (mode === 'string-id') send({id: String(m.id), result: {ok: true, id: String(m.id)}});
+        else if (mode === 'null-id-error') send({id: null, error: {code: -32700, message: 'Parse error'}});
+        else send({id: m.id, result: {ok: true}});
     }
 });
