@@ -5,6 +5,7 @@ import * as os from 'os';
 import {StringDecoder} from 'string_decoder';
 import {ExecutionError} from '@openhilo/runtime-contracts';
 import {CodeProcessError, type CodeExecutionOptions, type CodeExecutionResult} from './types';
+import {registerProcess} from './process-registry';
 
 const DEFAULT_BYTES = 10 * 1024 * 1024;
 export function normalizeOptions(options: CodeExecutionOptions) {
@@ -24,7 +25,12 @@ export function normalizeOptions(options: CodeExecutionOptions) {
     if (!Number.isInteger(killGraceMs) || killGraceMs < 0 || killGraceMs > 0x7fffffff) {
         throw new RangeError('killGraceMs must be an integer between 0 and 2147483647');
     }
-    return {timeoutMs, maxOutputBytes, maxResultBytes, killGraceMs, signal};
+    const env = options.env ?? {};
+    if (typeof env !== 'object' || env === null || Array.isArray(env)
+        || Object.values(env).some(value => typeof value !== 'string')) {
+        throw new TypeError('env must be an object with string values');
+    }
+    return {timeoutMs, maxOutputBytes, maxResultBytes, killGraceMs, signal, env: {...env}};
 }
 
 export function checkCancelled(signal?: AbortSignal): void {
@@ -58,6 +64,15 @@ export async function runProcess(command: string, args: string[], config: {
     consumeResult?: () => Promise<void>;
 }, options: ReturnType<typeof normalizeOptions>): Promise<CodeExecutionResult> {
     checkCancelled(options.signal);
+    let workingDir;
+    try {workingDir = await fs.stat(config.workingDir);}
+    catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
+    }
+    if (!workingDir?.isDirectory()) {
+        throw new ExecutionError(`Working directory does not exist or is not a directory: ${config.workingDir}`, 'unknown', 'code');
+    }
+    checkCancelled(options.signal);
     const startedAt = new Date().toISOString();
     return new Promise((resolve, reject) => {
         const grouped = process.platform !== 'win32';
@@ -65,13 +80,25 @@ export async function runProcess(command: string, args: string[], config: {
             cwd: config.workingDir, env: config.env,
             detached: grouped, stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const unregister = child.pid ? registerProcess({pid: child.pid, grouped}) : () => undefined;
         const stdout: Buffer[] = [], stderr: Buffer[] = [];
         let bytes = 0, closed = false, settled = false, checkingResult = false;
+        let terminating = false, reaped = false;
         let exitCode = 1;
         let failure: Error | undefined;
         let deadline: NodeJS.Timeout | undefined, escalation: NodeJS.Timeout | undefined;
         let monitor: NodeJS.Timeout | undefined;
 
+        const groupAlive = () => {
+            if (!child.pid) return false;
+            if (!grouped) return child.exitCode === null && child.signalCode === null;
+            try {
+                process.kill(-child.pid, 0);
+                return true;
+            } catch {
+                return false;
+            }
+        };
         const sendSignal = (signal: NodeJS.Signals) => {
             if (!child.pid) return;
             try {
@@ -90,10 +117,11 @@ export async function runProcess(command: string, args: string[], config: {
             return text + (failure instanceof CodeProcessError && failure.reason === 'output_limit' ? '' : decoder.end());
         };
         const finish = () => {
-            if (!closed || escalation || settled) return;
+            if (!closed || !reaped || settled) return;
             settled = true;
-            clearTimeout(deadline); clearInterval(monitor);
+            clearTimeout(deadline); clearInterval(monitor); clearTimeout(escalation);
             options.signal?.removeEventListener('abort', cancel);
+            unregister();
             const text = decode(stdout), errors = decode(stderr);
             if (failure) {
                 if (failure instanceof CodeProcessError) {failure.stdout = text; failure.stderr = errors;}
@@ -101,20 +129,37 @@ export async function runProcess(command: string, args: string[], config: {
             } else resolve({text, stderr: errors, files: [], exitCode,
                 meta: {executor: 'code', startedAt, finishedAt: new Date().toISOString()}});
         };
-        const stop = (error: Error) => {
-            if (failure || settled) return;
-            failure = error;
+        // Stops the whole group after failure or normal close: background jobs
+        // must not outlive the task. Never settle ahead of group cleanup.
+        const terminate = () => {
+            if (terminating) return;
+            terminating = true;
             sendSignal('SIGTERM');
-            // Keep this timer even if the leader closes: descendants may ignore TERM
-            // and have already closed their stdio. Never settle ahead of group cleanup.
-            escalation = setTimeout(() => {
-                sendSignal('SIGKILL');
+            const killAt = Date.now() + options.killGraceMs;
+            const check = () => {
                 escalation = undefined;
+                if (!groupAlive() && closed) {
+                    reaped = true;
+                    finish();
+                    return;
+                }
+                if (Date.now() < killAt) {
+                    escalation = setTimeout(check, 10);
+                    return;
+                }
+                sendSignal('SIGKILL');
                 // A deliberately detached descendant can retain pipes beyond this
                 // process group. Close our ends after escalation to bound the wait.
                 child.stdout.destroy(); child.stderr.destroy();
+                reaped = true;
                 finish();
-            }, options.killGraceMs);
+            };
+            check();
+        };
+        const stop = (error: Error) => {
+            if (failure || settled) return;
+            failure = error;
+            terminate();
         };
         const cancel = () => stop(new CodeProcessError('cancelled', 'Code execution cancelled by host'));
         const capture = (destination: Buffer[], chunk: Buffer) => {
@@ -153,6 +198,7 @@ export async function runProcess(command: string, args: string[], config: {
                 catch (error) {stop(error as Error);}
             }
             closed = true;
+            terminate();
             finish();
         });
         options.signal?.addEventListener('abort', cancel, {once: true});

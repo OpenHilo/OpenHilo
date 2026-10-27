@@ -363,6 +363,26 @@ test('workspace symlink escapes, missing artifacts and remote workspaces are rej
     }
 });
 
+test('workspace tools reject repository metadata regardless of path case', async () => {
+    const {localWorkspace} = require('../dist/workspace');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-git-case-'));
+    try {
+        await fs.mkdir(path.join(dir, '.git'));
+        await fs.writeFile(path.join(dir, '.git', 'config'), '[core]\n');
+        const workspace = await localWorkspace({id: dir, uri: pathToFileURL(dir).href});
+        const tool = name => workspace.tools.find(item => item.name === name);
+        const context = {callId: 'c', signal: new AbortController().signal};
+        for (const target of ['.git/config', '.GIT/config', '.Git/hooks/pre-commit', 'sub/../.gIt/config']) {
+            await assert.rejects(tool('workspace_read').handler({path: target}, context), /Repository metadata/);
+            await assert.rejects(tool('workspace_write').handler({path: target, content: 'owned'}, context), /Repository metadata/);
+        }
+        await assert.rejects(fs.access(path.join(dir, '.git', 'hooks')));
+        assert.deepEqual(await tool('workspace_list').handler({path: '.'}, context), []);
+    } finally {
+        await fs.rm(dir, {recursive: true, force: true});
+    }
+});
+
 test('partial usage remains unknown rather than reporting missing tokens as zero', async () => {
     const h = harness('openai', [response('openai', [call('missing', 'unknown_tool', {})], {usage: undefined}), finish()]);
     const events = [];

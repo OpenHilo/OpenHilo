@@ -56,6 +56,28 @@ callers can supply implementations as a third argument.
 | `killGraceMs` | 1,000 | Nonnegative integer delay between SIGTERM and SIGKILL; zero requests immediate escalation. Maximum 2,147,483,647. |
 | `maxOutputBytes` | 10 MiB | Combined stdout and stderr **bytes**, not characters or separate per-stream allowances. Zero permits no output; `Infinity` opts out. |
 | `maxResultBytes` | 10 MiB | Serialized business-output protocol file size, including field names and encoding overhead. Zero permits no bytes; `Infinity` opts out. |
+| `env` | `{}` | Extra environment variables (string values) for every subprocess, e.g. `{API_TOKEN: process.env.API_TOKEN}`. This is the only way to pass host credentials. |
+
+## Environment
+
+Subprocesses do not inherit the full host environment. Only `PATH`, `HOME`,
+`USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `LC_*`, `TZ`, `TMPDIR`, `TERM`
+(plus `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `WINDIR`, `TEMP`, `TMP` on Windows)
+are copied; API keys and other host variables must be opted in through `env`.
+Bash inputs are layered on top of `env`. An input whose name would override a
+variable that controls interpreter startup or program lookup (`PATH`, `HOME`,
+`SHELL`, `ENV`, `BASH_ENV`, `BASHOPTS`, `SHELLOPTS`, `IFS`, `CDPATH`,
+`GLOBIGNORE`, `PS4`, `PROMPT_COMMAND`, `TMPDIR`, `LD_*`, `DYLD_*`, `PYTHON*`,
+`NODE_OPTIONS`, `NODE_PATH`, Perl/Ruby/Java option variables, `GIT_*`,
+`BASH_FUNC_*`, `_ITT_*`) is rejected before launch; rename the input.
+
+Declared output names must match `^[A-Za-z_][A-Za-z0-9_]*$` in both languages.
+File and directory outputs are resolved with `realpath`; a symlink whose target
+is outside the workspace is rejected. Bash output capture survives a user
+`trap ... EXIT` (the user action runs after capture and outputs it sets are
+captured again) and `exec` (values are captured just before the shell is
+replaced). Python scripts run with `__name__ == "__main__"`; NaN, Infinity and
+other non-JSON values are reported as not JSON-serializable.
 
 These defaults introduce finite output budgets for existing callers. Increase
 the relevant limit for known large payloads. Limits must be nonnegative safe
@@ -74,7 +96,10 @@ back filesystem writes, network requests or other effects already performed.
 
 On macOS/Linux, tasks run in a separate process group. Stops send SIGTERM to the
 group, then SIGKILL after the grace period, including descendants whose parent
-has exited. Group cleanup and cancellation remain active during the bounded
+has exited; if the group exits on SIGTERM the call settles without waiting for
+the rest of the grace period. The same SIGTERM/SIGKILL cleanup runs after a
+normal exit, so background jobs (`nohup cmd &`) do not outlive the task. A
+missing working directory is reported before launch. Group cleanup and cancellation remain active during the bounded
 result-file read, including limits discovered after the direct child exits.
 The promise settles after the direct child closes, result reading and escalation
 have finished and protocol files have been removed; Runtime retains its lock until
@@ -83,8 +108,14 @@ Descendants that deliberately create another session/process group escape this
 mechanism; Windows process-tree termination is not guaranteed or verified.
 
 Because Code uses a separate process group, terminal SIGINT does not reach it
-automatically. Hosts must forward their cancellation signal through the `signal`
-option. The shared interactive example host does this for Ctrl+C.
+automatically. Hosts should forward their cancellation signal through the `signal`
+option. The shared interactive example host does this for Ctrl+C. As a backstop,
+while any Code process is live the adapter sends SIGTERM to live groups on host
+SIGINT, SIGTERM or SIGHUP and SIGKILLs them on process `exit`. If no other
+listener handles the signal, it waits up to one second for the groups, SIGKILLs
+survivors and re-raises the signal so the host still terminates as usual. If the
+host has its own listener, the host decides whether to exit. The listeners are
+removed when no Code process is live.
 
 The result file is size-monitored while the subprocess runs and read with a
 bounded reader after exit. Monitoring is not an OS disk quota and may overshoot
@@ -98,5 +129,5 @@ Requires Node.js, Bash and Python 3 on the host. The build copies `_itt_runner.p
 includes it. Run `npm test --workspace @openhilo/code-local` after building dependency workspaces. Tests use temporary
 directories, local subprocesses and a fake AI executor; no accounts or model services are contacted.
 
-This is a trusted local-code adapter, not an isolation sandbox. Processes inherit the existing host environment and
-permissions. Remote execution and isolation are not supplied by this adapter.
+This is a trusted local-code adapter, not an isolation sandbox. Processes run with the host user's permissions and the
+allowlisted environment described above. Remote execution and isolation are not supplied by this adapter.

@@ -238,6 +238,67 @@ test('terminal Ctrl+C reports interruption during prompts and pending receipts',
     }
 });
 
+test('consecutive tasks share buffered piped lines, an abandoned read keeps its line, and stdin is released', () => {
+    const {spawnSync} = require('node:child_process');
+    const source = `const { TerminalHumanExecutor } = require('./dist');
+      const executor = new TerminalHumanExecutor({write() {}});
+      const req = ${JSON.stringify({...request, outputs: {a: 'text'}})};
+      const task = (taskId, signal = new AbortController().signal) => executor.present({...req, taskId}, {
+        signal, async submit(value) { console.error(JSON.stringify(value.outputs)); return { status: 'accepted', taskId: value.taskId, submissionId: value.submissionId }; }
+      });
+      (async () => {
+        await task('t1');
+        await task('t2');
+        const aborted = new AbortController();
+        aborted.abort();
+        await task('t3', aborted.signal).catch(() => console.error('aborted'));
+        await task('t4');
+        await task('t5').catch(error => console.error(error.message));
+        executor.close();
+        await task('t6').catch(error => console.error(error.message));
+      })();`;
+    const child = spawnSync(process.execPath, ['-e', source], {
+        cwd: require('node:path').resolve(__dirname, '..'),
+        input: 'first\nsecond\nthird\n',
+        encoding: 'utf8',
+        timeout: 5000
+    });
+    assert.equal(child.status, 0, child.stdout + child.stderr);
+    assert.deepEqual(child.stderr.trim().split('\n'), ['{"a":"first"}', '{"a":"second"}', 'aborted', '{"a":"third"}',
+        'Human terminal input closed (EOF) before submission', 'Human terminal input closed (EOF) before submission']);
+});
+
+test('a waiting read cancelled by abort does not swallow the next line', async () => {
+    const source = `const { TerminalHumanExecutor } = require('./dist');
+      const executor = new TerminalHumanExecutor({write() {}});
+      const req = ${JSON.stringify({...request, outputs: {a: 'text'}})};
+      const submit = async value => { console.error(JSON.stringify(value.outputs)); return { status: 'accepted', taskId: value.taskId, submissionId: value.submissionId }; };
+      const controller = new AbortController();
+      const first = executor.present(req, {signal: controller.signal, submit}).catch(() => console.error('aborted'));
+      setTimeout(async () => {
+        controller.abort();
+        await first;
+        await executor.present({...req, taskId: 'next'}, {signal: new AbortController().signal, submit});
+        process.stdout.write('DONE');
+      }, 50);`;
+    const result = await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', source], {cwd: require('node:path').resolve(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe']});
+        let stderr = '';
+        child.stderr.on('data', data => stderr += data);
+        const timer = setTimeout(() => {
+            child.kill();
+            reject(new Error('presentation left pending'));
+        }, 3000);
+        setTimeout(() => child.stdin.end('late\n'), 300);
+        child.on('exit', code => {
+            clearTimeout(timer);
+            resolve({code, stderr});
+        });
+    });
+    assert.equal(result.code, 0);
+    assert.deepEqual(result.stderr.trim().split('\n'), ['aborted', '{"a":"late"}']);
+});
+
 test('default readline submits complete numeric choices and preserves text in real subprocesses', async () => {
     const {spawnSync} = require('node:child_process');
     for (const [outputs, input, expected] of [

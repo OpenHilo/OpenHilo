@@ -50,3 +50,23 @@ test('legacy JSON completion works through the independent SDK export with offli
     assert.deepEqual((await execution.result).outputs, {skills: ['example:edit']});
     assert.equal(calls, 1);
 });
+
+test('legacy JSON completion owns retries and does not truncate JSON at a tiny token cap', async () => {
+    let calls = 0;
+    global.fetch = async (_url, init) => {
+        calls++;
+        assert.ok(JSON.parse(init.body).max_tokens >= 1024);
+        return new Response(JSON.stringify({error: {message: 'unavailable'}}), {
+            status: 503,
+            headers: {'content-type': 'application/json'}
+        });
+    };
+    const executor = new LegacyJsonCompletionExecutor({base_url: 'http://offline.invalid/v1', api_key: 'fake', model: 'offline'});
+    const execution = await executor.start({
+        version: 1, taskId: 'skills', instruction: 'Select', inputs: {}, output: {skills: 'json'},
+        requiredCapabilities: ['structured_output']
+    }, {attemptId: 'attempt', signal: new AbortController().signal, onEvent() {}});
+    const result = await execution.result;
+    assert.equal(result.status, 'failed');
+    assert.equal(calls, 2);
+});

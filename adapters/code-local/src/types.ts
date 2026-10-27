@@ -12,6 +12,11 @@ export interface CodeExecutionOptions {
     killGraceMs?: number;
     /** Host cancellation; awaiting the returned promise also awaits process cleanup. */
     signal?: AbortSignal;
+    /**
+     * Extra environment variables for the subprocess. Only an allowlist of host
+     * variables (PATH, HOME, locale, ...) is inherited; credentials must be opted in here.
+     */
+    env?: Record<string, string>;
 }
 
 export type CodeProcessFailureReason = 'timeout' | 'cancelled' | 'output_limit' | 'result_limit';

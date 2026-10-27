@@ -25,6 +25,7 @@ def main() -> None:
 
     with open(input_path, encoding="utf-8") as f:
         globals_dict: dict = json.load(f)
+    globals_dict["__name__"] = "__main__"
 
     with open(script_file, encoding="utf-8") as f:
         user_script = f.read()
@@ -46,13 +47,13 @@ def main() -> None:
             continue  # absent — scheduler will detect as "not set"
         val = globals_dict[var_name]
         try:
-            json.dumps(val)  # serialisability probe
+            json.dumps(val, allow_nan=False)  # serialisability probe; NaN/Infinity are not JSON
             outputs[key] = val
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             not_serialisable.append(key)
 
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump({"outputs": outputs, "not_serialisable": not_serialisable}, f)
+        json.dump({"outputs": outputs, "not_serialisable": not_serialisable}, f, allow_nan=False)
     raise SystemExit(exit_code)
 
 

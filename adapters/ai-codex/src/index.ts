@@ -35,6 +35,7 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 const fail = (code: 'invalid_request' | 'invalid_output' | 'outcome_unknown', message: string, before = false): never => {
     throw new ContractError({code, message, retryable: false, safeToReplay: before});
 };
+const MAX_EARLY_TURN_EVENTS = 10_000;
 const record = (v: unknown): v is JsonObject => Boolean(v && typeof v === 'object' && !Array.isArray(v) && isJsonValue(v));
 const outputSchema = {
     type: 'object',
@@ -128,6 +129,7 @@ export class CodexTaskExecutor implements AiTaskExecutor {
             const seenCalls = new Set<string>(), pendingCalls = new Set<Promise<void>>();
             const nativeItems = new Map<string, { tool: string; finished: boolean }>();
             const streamedCommandItems = new Set<string>();
+            const earlyTurnEvents: Message[] = [];
             const toolAbort = new AbortController(), toolSignal = AbortSignal.any([context.signal, toolAbort.signal]);
             const activeTools = new Set<Promise<unknown>>();
             let resolve!: (result: TaskResult) => void, reject!: (error: Error) => void;
@@ -158,6 +160,10 @@ export class CodexTaskExecutor implements AiTaskExecutor {
             };
             const respondError = (m: Message, message: string) => {
                 if (!toolSignal.aborted) peer!.send({id: m.id, error: {code: -32602, message}});
+            };
+            const adoptTurn = (id: string) => {
+                turnId = id;
+                for (const event of earlyTurnEvents.splice(0)) receive(event);
             };
             const scoped = (p: any) => p?.threadId === threadId && p?.turnId === turnId && typeof turnId === 'string';
             const serverRequest = async (m: Message) => {
@@ -238,21 +244,34 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                         respondError(m, 'Invalid questions');
                         return;
                     }
-                    const answers: [string, { answers: string[] }][] = [];
+                    // Validate every question before asking any, so malformed input is a model-visible error.
+                    const questions: { id: string; prompt: string; options?: { label: string; value: string; reason?: string }[] }[] = [];
                     for (const q of p.questions) {
-                        if (typeof q.id !== 'string' || typeof q.question !== 'string' || q.isSecret) {
+                        if (!record(q) || typeof q.id !== 'string' || typeof q.question !== 'string' || !q.question.trim() || q.isSecret) {
                             respondError(m, 'Unsupported question');
                             return;
                         }
-                        const answer = await context.ask({
-                            id: `codex:${host.attemptId}:${++questionIndex}`, prompt: q.question, answer: 'text',
+                        if (q.options != null && (!Array.isArray(q.options) || !q.options.every(o => record(o) && typeof o.label === 'string'
+                            && o.label.trim() && (o.description == null || typeof o.description === 'string')))) {
+                            respondError(m, 'Question options must have string labels and optional string descriptions');
+                            return;
+                        }
+                        questions.push({
+                            id: q.id, prompt: q.question,
                             ...(Array.isArray(q.options) ? {
                                 options: q.options.map((o: any) => ({
                                     label: o.label,
                                     value: o.label,
-                                    reason: o.description
+                                    ...(typeof o.description === 'string' ? {reason: o.description} : {})
                                 }))
                             } : {})
+                        });
+                    }
+                    const answers: [string, { answers: string[] }][] = [];
+                    for (const q of questions) {
+                        const answer = await context.ask({
+                            id: `codex:${host.attemptId}:${++questionIndex}`, prompt: q.prompt, answer: 'text',
+                            ...(q.options ? {options: q.options} : {})
                         });
                         answers.push([q.id, {answers: [String(answer)]}]);
                     }
@@ -303,7 +322,13 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                         stop(new Error('Unexpected Codex turn identity'));
                         return;
                     }
-                    turnId = p.turn.id;
+                    adoptTurn(p.turn.id);
+                    return;
+                }
+                // Turn events can precede both turn/started and the turn/start response.
+                if (!turnId && m.method !== 'thread/tokenUsage/updated' && typeof (p.turn?.id ?? p.turnId) === 'string') {
+                    if (earlyTurnEvents.length >= MAX_EARLY_TURN_EVENTS) stop(new Error('Too many Codex events before the turn identity'));
+                    else earlyTurnEvents.push(m);
                     return;
                 }
                 if (m.method === 'turn/completed') {
@@ -463,7 +488,7 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                     }], outputSchema, ...(this.options.effort ? {effort: this.options.effort} : {})
                 });
                 if (typeof started?.turn?.id !== 'string' || (turnId && turnId !== started.turn.id)) throw new Error('Codex returned an invalid turn identity');
-                turnId = started.turn.id;
+                if (!turnId) adoptTurn(started.turn.id);
                 return await result;
             } finally {
                 context.emit({type: 'phase', phase: 'cleanup'});

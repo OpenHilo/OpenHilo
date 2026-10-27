@@ -11,17 +11,33 @@ export async function localWorkspace(workspace: NonNullable<ExecutionHost['works
     const root = await fs.realpath(fileURLToPath(workspace.uri));
     if (!(await fs.stat(root)).isDirectory()) return fail('invalid_request', 'Workspace must be a directory');
 
+    // Case-insensitive file systems (macOS, Windows) resolve `.GIT` to `.git`.
+    const isGitName = (name: string) => name.normalize('NFC').toLowerCase() === '.git';
+    async function gitRealpath(): Promise<string | undefined> {
+        try {return await fs.realpath(path.join(root, '.git'));}
+        catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+            throw error;
+        }
+    }
+
     async function resolve(relative: string, parents = false): Promise<string> {
         const target = path.resolve(root, relative);
         const rel = path.relative(root, target);
         if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return fail('invalid_request', 'Path escapes the workspace');
         const parts = rel.split(path.sep).filter(Boolean);
-        if (parts.includes('.git')) return fail('invalid_request', 'Repository metadata is not a workspace tool target');
+        const metadata = () => fail('invalid_request', 'Repository metadata is not a workspace tool target');
+        if (parts.some(isGitName)) return metadata();
+        const git = await gitRealpath();
         let current = root;
         for (let i = 0; i < parts.length; i++) {
             current = path.join(current, parts[i]);
             try {
                 if ((await fs.lstat(current)).isSymbolicLink()) return fail('invalid_request', 'Workspace tools do not follow symlinks');
+                if (git !== undefined) {
+                    const real = await fs.realpath(current);
+                    if (real === git || real.startsWith(`${git}${path.sep}`)) return metadata();
+                }
             } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
                 if (parents && i < parts.length - 1) await fs.mkdir(current);
@@ -58,7 +74,7 @@ export async function localWorkspace(workspace: NonNullable<ExecutionHost['works
             async handler(args, {signal}) {
                 const target = await resolve(args.path as string);
                 signal.throwIfAborted();
-                return (await fs.readdir(target, {withFileTypes: true})).filter(entry => entry.name !== '.git').map(entry => ({
+                return (await fs.readdir(target, {withFileTypes: true})).filter(entry => !isGitName(entry.name)).map(entry => ({
                     name: entry.name,
                     kind: entry.isSymbolicLink() ? 'symlink' : entry.isDirectory() ? 'directory' : 'file'
                 }));

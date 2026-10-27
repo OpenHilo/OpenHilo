@@ -23,6 +23,10 @@ EOF and cancellation close the presentation without inventing a result, leaving 
 interactive terminal Ctrl+C reports an `AbortError` identifying `SIGINT`. Cancellation also settles a pending prompt or
 receipt, but cannot retract a submission already delivered to the host; the host remains authoritative.
 
+All tasks presented by one executor share a single stdin line reader, so lines piped or typed ahead are queued for the
+next prompt instead of being dropped between tasks. Stdin is paused (and a TTY returned to cooked mode) while no task is
+reading, so it does not keep the host alive. Call `executor.close()` (or use `using`) to release stdin permanently.
+
 `TerminalHumanExecutorOptions` also accepts `promptFn(prompt, signal?) => Promise<string>` and `write(text) => void` for
 embedding. An injected prompt should release its own resources on cancellation; the adapter settles even if that prompt
 ignores its signal. The default executor ID is `terminal`.

@@ -58,6 +58,11 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     if (m.method === 'turn/start') {
         const task = JSON.parse(m.params.input[0].text);
         scenario = task.instruction;
+        if (scenario === 'early-completion') {
+            // Completion precedes both turn/started and the turn/start response.
+            finish({answer: 'early'});
+            return reply(m.id, {turn: {id: turnId, status: 'inProgress', items: []}});
+        }
         note('turn/started', {threadId, turn: {id: turnId, status: 'inProgress', items: []}});
         reply(m.id, {turn: {id: turnId, status: 'inProgress', items: []}});
         if (scenario === 'output-envelope' || scenario === 'raw-profile') {
@@ -168,6 +173,11 @@ readline.createInterface({input: process.stdin}).on('line', line => {
                 arguments: {prompt: 'Choose a name'}
             }
         });
+        if (scenario === 'bad-options') return send({
+            id: 'options1',
+            method: 'item/tool/requestUserInput',
+            params: {threadId, turnId, questions: [{id: 'q1', question: 'Pick one', options: [{label: 42}]}]}
+        });
         if (scenario === 'approval') return send({
             id: 'approval1',
             method: 'item/commandExecution/requestApproval',
@@ -197,5 +207,6 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     if (m.id === 'tool1') return finish({answer: JSON.parse(m.result.contentItems[0].text).echo});
     if (m.id === 'ask1') return finish({answer: JSON.parse(m.result.contentItems[0].text)});
     if (m.id === 'approval1') return finish({answer: m.result.decision});
+    if (m.id === 'options1') return finish({answer: m.error ? `rejected: ${m.error.message}` : 'asked'});
     if (m.id === 'evil') return finish({answer: m.error ? 'rejected' : 'unsafe'});
 });

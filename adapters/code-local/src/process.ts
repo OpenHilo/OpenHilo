@@ -17,6 +17,17 @@ import {makeFileRef} from '@openhilo/runtime/file-reference';
 
 // ── Bash prologue generation ──────────────────────────────────────────────────
 
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Output names become shell/Python variable names and must be plain identifiers. */
+export function assertOutputNames(names: string[]): void {
+    for (const name of names) {
+        if (!IDENTIFIER.test(name)) {
+            throw new AbortError(`code output name '${name}' must match ${IDENTIFIER.source}`);
+        }
+    }
+}
+
 /**
  * Generate a #!/bin/bash EXIT-trap prologue for capturing declared output vars.
  * Each declared output gets a capture block using `${VAR+set}` to distinguish
@@ -24,21 +35,94 @@ import {makeFileRef} from '@openhilo/runtime/file-reference';
  *   name\000+\000value\000   (set)
  *   name\000-\000            (unset)
  *
+ * In Bash (not POSIX mode) user `trap ... EXIT` registrations are chained
+ * after the capture instead of replacing it, and `exec` captures before the
+ * shell is replaced. The capture rewrites the file each time it runs.
+ *
  * Returns empty string if no declared outputs (no prologue needed).
  */
 export function generateBashPrologue(outputKeys: string[]): string {
     if (outputKeys.length === 0) return '';
+    assertOutputNames(outputKeys);
     const blocks = outputKeys
         .map(
             key =>
                 `  if [ "\${${key}+set}" = set ]; then\n` +
-                `    printf '${key}\\000+\\000%s\\000' "\${${key}}" >> "$_ITT_OUT"\n` +
+                `    printf '%s\\000+\\000%s\\000' '${key}' "\${${key}}" >> "$_ITT_OUT"\n` +
                 `  else\n` +
-                `    printf '${key}\\000-\\000' >> "$_ITT_OUT"\n` +
+                `    printf '%s\\000-\\000' '${key}' >> "$_ITT_OUT"\n` +
                 `  fi`,
         )
         .join('\n');
-    return `#!/bin/bash\n_itt_capture() {\n${blocks}\n}\ntrap '_itt_capture' EXIT\n`;
+    return `#!/bin/bash
+_itt_capture() {
+  : > "$_ITT_OUT"
+${blocks}
+}
+_itt_exit_action=
+_itt_status() { return "$1"; }
+_itt_on_exit() {
+  _itt_exit_status=$?
+  _itt_capture
+  if [ -n "$_itt_exit_action" ]; then
+    # Branches keep the original $? visible to the user's action, even under errexit.
+    if _itt_status "$_itt_exit_status"; then eval "$_itt_exit_action"; else eval "$_itt_exit_action"; fi
+    _itt_capture
+  fi
+}
+trap '_itt_on_exit' EXIT
+if [ -n "\${BASH_VERSION-}" ] && ! shopt -oq posix; then
+  trap() {
+    if [ "\${BASHPID:-$$}" != "$$" ] || [ "$#" -eq 0 ] || [ "$1" = -p ] || [ "$1" = -l ]; then
+      builtin trap "$@"
+      return
+    fi
+    [ "$1" != -- ] || shift
+    local _itt_action=- _itt_signal _itt_rest=()
+    if [ "$#" -gt 1 ]; then _itt_action=$1; shift; fi
+    for _itt_signal in "$@"; do
+      case "$_itt_signal" in
+        0|EXIT|exit|SIGEXIT) if [ "$_itt_action" = - ]; then _itt_exit_action=; else _itt_exit_action=$_itt_action; fi ;;
+        *) _itt_rest+=("$_itt_signal") ;;
+      esac
+    done
+    [ "\${#_itt_rest[@]}" -eq 0 ] || builtin trap -- "$_itt_action" "\${_itt_rest[@]}"
+  }
+  shopt -s expand_aliases
+  # Plain 'exec' (not 'builtin exec') keeps redirection-only forms persistent.
+  alias exec='exec $(_itt_capture)'
+fi
+`;
+}
+
+// ── Subprocess environment ────────────────────────────────────────────────────
+
+/** Host variables passed to every subprocess; credentials require explicit `env`. */
+const INHERITED_ENV = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z_]+|TZ|TMPDIR|TERM|SYSTEMROOT|COMSPEC|PATHEXT|WINDIR|TEMP|TMP)$/;
+
+/** Variables that change how shells, loaders and interpreters start or resolve programs. */
+const PROTECTED_ENV = /^(PATH|HOME|SHELL|ENV|BASH_ENV|BASHOPTS|SHELLOPTS|IFS|CDPATH|GLOBIGNORE|PS4|PROMPT_COMMAND|TMPDIR|LD_.*|DYLD_.*|PYTHON.*|NODE_OPTIONS|NODE_PATH|PERL5OPT|PERL5LIB|PERLLIB|RUBYOPT|RUBYLIB|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|GIT_.*|BASH_FUNC_.*|_ITT_.*)$/;
+
+function isProtectedEnvName(name: string): boolean {
+    return PROTECTED_ENV.test(process.platform === 'win32' ? name.toUpperCase() : name);
+}
+
+/** Workflow inputs may not override variables that alter interpreter startup or program lookup. */
+export function assertSafeEnvInputs(names: string[]): void {
+    for (const name of names) {
+        if (isProtectedEnvName(name)) {
+            throw new AbortError(`code input '${name}' would override the protected environment variable ${name}; rename the input`);
+        }
+    }
+}
+
+/** Allowlisted host environment plus explicit host-supplied `env`; never the full host environment. */
+export function subprocessEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {};
+    for (const [name, value] of Object.entries(process.env)) {
+        if (value !== undefined && INHERITED_ENV.test(process.platform === 'win32' ? name.toUpperCase() : name)) env[name] = value;
+    }
+    return Object.assign(env, extra);
 }
 
 // ── Bash output file parsing ──────────────────────────────────────────────────
@@ -96,15 +180,21 @@ async function validatePathOutput(name: string, raw: string, kind: 'file' | 'dir
     const workspace = path.resolve(workspaceDir);
     const abs = path.resolve(workspace, raw);
     const relative = path.relative(workspace, abs);
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    const escapes = (rel: string) => rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+    if (escapes(relative)) {
         throw new AbortError(`code output '${name}': path must be under ITT_WORKSPACE`);
     }
-    let stat;
+    let stat, real;
     try {
-        stat = await fsPromises.stat(abs);
+        real = await fsPromises.realpath(abs);
+        stat = await fsPromises.stat(real);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         throw new AbortError(`code output '${name}': path '${relative}' not found`);
+    }
+    // Symlinks may only resolve to targets that are themselves inside the workspace.
+    if (escapes(path.relative(await fsPromises.realpath(workspace), real))) {
+        throw new AbortError(`code output '${name}': path must resolve under ITT_WORKSPACE (symlink escapes are rejected)`);
     }
     if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) {
         throw new AbortError(`code output '${name}': path must be ${kind}`);
@@ -189,6 +279,7 @@ export async function executeCode(config: CodeExecutorConfig): Promise<TaskResul
     checkCancelled(options.signal);
     const declaredOutputs = config.declaredOutputs ?? {};
     const outputKeys = Object.keys(declaredOutputs);
+    assertSafeEnvInputs(Object.keys(config.envVars));
     const prologue = generateBashPrologue(outputKeys);
     const interpreter = config.shell ?? (outputKeys.length ? 'bash' : 'sh');
     const temporary = outputKeys.length ? await fsPromises.mkdtemp(path.join(os.tmpdir(), 'itt_bash_')) : undefined;
@@ -199,7 +290,7 @@ export async function executeCode(config: CodeExecutorConfig): Promise<TaskResul
     try {
         result = await runProcess(interpreter, ['-c', prologue ? prologue + '\n' + config.command : config.command], {
             workingDir: config.workingDir,
-            env: {...process.env, ...config.envVars, ...(outFilePath ? {_ITT_OUT: outFilePath} : {})},
+            env: {...subprocessEnv(options.env), ...config.envVars, ...(outFilePath ? {_ITT_OUT: outFilePath} : {})},
             resultFile: outFilePath,
             consumeResult: outFilePath ? async () => {
                 try {outData = await readResult(outFilePath, options.maxResultBytes);}
@@ -259,7 +350,7 @@ async function validatePythonOutput(
     notSerializable: boolean,
 ): Promise<CodeOutput> {
     if (notSerializable) {
-        throw new AbortError(`code output '${name}': value not JSON-serialisable`);
+        throw new AbortError(`code output '${name}': value is not JSON-serializable (NaN, Infinity and non-JSON types are rejected)`);
     }
     switch (declaredType) {
         case 'text':
@@ -319,6 +410,7 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
     const options = normalizeOptions(config);
     checkCancelled(options.signal);
     const {script, inputs, declaredOutputs, workspaceDir, workingDir} = config;
+    assertOutputNames(Object.keys(declaredOutputs));
     const temporary = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'itt_python_'));
     const inputFilePath = path.join(temporary, 'input.json');
     const scriptFilePath = path.join(temporary, 'script.py');
@@ -331,7 +423,7 @@ export async function executePython(config: PythonExecutorConfig): Promise<TaskR
         await fsPromises.writeFile(scriptFilePath, script, 'utf8');
         result = await runProcess('python3', [path.resolve(__dirname, '_itt_runner.py')], {
             workingDir, resultFile: Object.keys(declaredOutputs).length ? outputFilePath : undefined,
-            env: {...process.env, _ITT_INPUT: inputFilePath, _ITT_SCRIPT_FILE: scriptFilePath,
+            env: {...subprocessEnv(options.env), _ITT_INPUT: inputFilePath, _ITT_SCRIPT_FILE: scriptFilePath,
                 _ITT_OUTPUT: outputFilePath, _ITT_DECLARED_KEYS: JSON.stringify(Object.keys(declaredOutputs))},
             consumeResult: Object.keys(declaredOutputs).length ? async () => {
                 try {outputData = await readResult(outputFilePath, options.maxResultBytes);}

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {createInterface} from 'node:readline';
+import {createInterface, type Interface} from 'node:readline';
 import {
     type HumanExecutor,
     type HumanTaskHost,
@@ -13,11 +13,102 @@ export interface TerminalHumanExecutorOptions {
     write?: (text: string) => void;
 }
 
+/**
+ * One stdin reader shared by every task of an executor, so lines that arrive
+ * together (piped input, typeahead) are queued rather than lost between tasks.
+ * Stdin is paused, and a TTY returned to cooked mode, while no task is reading.
+ */
+class SharedLineReader {
+    readonly readline: Interface;
+    private readonly lines: string[] = [];
+    private readonly waiters = new Set<{ resolve(line: string): void; reject(error: Error): void }>();
+    private closed = false;
+    private users = 0;
+
+    constructor() {
+        this.readline = createInterface({input: process.stdin, output: process.stdout});
+        this.readline.on('line', line => {
+            const waiter = this.waiters.values().next().value;
+            if (!waiter) {
+                this.lines.push(line);
+                return;
+            }
+            this.waiters.delete(waiter);
+            waiter.resolve(line);
+        });
+        this.readline.on('close', () => {
+            this.closed = true;
+            for (const waiter of this.waiters) waiter.reject(eofError());
+            this.waiters.clear();
+        });
+        this.setActive(false);
+    }
+
+    acquire(): void {
+        if (this.users++ === 0) this.setActive(true);
+    }
+
+    release(): void {
+        if (--this.users === 0) this.setActive(false);
+    }
+
+    next(signal: AbortSignal): Promise<string> {
+        signal.throwIfAborted();
+        if (this.lines.length) return Promise.resolve(this.lines.shift()!);
+        if (this.closed) return Promise.reject(eofError());
+        return new Promise((resolve, reject) => {
+            // An abandoned read must not consume the next task's line.
+            const abort = () => {
+                this.waiters.delete(waiter);
+                reject(signal.reason);
+            };
+            const waiter = {
+                resolve: (line: string) => {
+                    signal.removeEventListener('abort', abort);
+                    resolve(line);
+                },
+                reject: (error: Error) => {
+                    signal.removeEventListener('abort', abort);
+                    reject(error);
+                },
+            };
+            this.waiters.add(waiter);
+            signal.addEventListener('abort', abort, {once: true});
+        });
+    }
+
+    close(): void {
+        this.readline.close();
+    }
+
+    private setActive(active: boolean): void {
+        if (this.closed) return;
+        if (active) this.readline.resume();
+        else this.readline.pause();
+        const input = process.stdin as NodeJS.ReadStream & { setRawMode?: (mode: boolean) => void };
+        if (this.readline.terminal && input.isTTY && typeof input.setRawMode === 'function') input.setRawMode(active);
+    }
+}
+
+function eofError(): Error {
+    return new Error('Human terminal input closed (EOF) before submission');
+}
+
 /** Collect business results; closing stdin or aborting never submits a task. */
 export class TerminalHumanExecutor implements HumanExecutor {
     readonly id = 'terminal';
+    private reader?: SharedLineReader;
 
     constructor(private readonly options: TerminalHumanExecutorOptions = {}) {
+    }
+
+    /** Release stdin. Later presentations without `promptFn` observe EOF. */
+    close(): void {
+        this.reader?.close();
+    }
+
+    [Symbol.dispose](): void {
+        this.close();
     }
 
     async present(request: HumanTaskRequest, host: HumanTaskHost): Promise<void> {
@@ -25,20 +116,15 @@ export class TerminalHumanExecutor implements HumanExecutor {
         const write = this.options.write ?? ((text: string) => {
             process.stdout.write(text);
         });
-        const readline = this.options.promptFn ? undefined : createInterface({
-            input: process.stdin,
-            output: process.stdout
-        });
+        const reader = this.options.promptFn ? undefined : (this.reader ??= new SharedLineReader());
         const interrupted = new AbortController();
         const signal = AbortSignal.any([host.signal, interrupted.signal]);
         const onInterrupt = () => interrupted.abort(new DOMException('Human terminal input interrupted (SIGINT)', 'AbortError'));
-        readline?.on('SIGINT', onInterrupt);
-        const lines = readline?.[Symbol.asyncIterator]();
-        const prompt = this.options.promptFn ?? (async (text: string): Promise<string> => {
+        reader?.readline.on('SIGINT', onInterrupt);
+        reader?.acquire();
+        const prompt = this.options.promptFn ?? (async (text: string, promptSignal?: AbortSignal): Promise<string> => {
             write(text);
-            const line = await lines!.next();
-            if (line.done) throw new Error('Human terminal input closed (EOF) before submission');
-            return line.value;
+            return reader!.next(promptSignal ?? signal);
         });
         const ask = (text: string) => abortable(() => prompt(text, signal), signal);
         try {
@@ -86,8 +172,8 @@ export class TerminalHumanExecutor implements HumanExecutor {
                 throw new Error(`Human submission ${receipt.status}: ${receipt.message ?? 'The task did not accept this result'}`);
             }
         } finally {
-            readline?.off('SIGINT', onInterrupt);
-            readline?.close();
+            reader?.readline.off('SIGINT', onInterrupt);
+            reader?.release();
         }
     }
 }

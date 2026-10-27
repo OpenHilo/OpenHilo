@@ -14,6 +14,9 @@ export interface LegacyJsonCompletionConfig {
     model: string
 }
 
+const COMPLETION_TIMEOUT_MS = 60_000;
+const COMPLETION_MAX_TOKENS = 4096;
+
 function completionErrorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
@@ -77,14 +80,16 @@ export class LegacyJsonCompletionExecutor implements AiTaskExecutor {
                 };
                 context.signal.addEventListener('abort', onAbort, {once: true});
                 try {
-                    const client = new OpenAI({baseURL: this.config.base_url, apiKey: this.config.api_key});
+                    // This loop owns retries and the deadline; SDK defaults would multiply both.
+                    const client = new OpenAI({baseURL: this.config.base_url, apiKey: this.config.api_key,
+                        maxRetries: 0, timeout: COMPLETION_TIMEOUT_MS});
                     let timeoutId: ReturnType<typeof setTimeout> | undefined;
                     const response = await Promise.race([
                         aborted,
                         client.chat.completions.create(
                             {
                                 model: this.config.model,
-                                max_tokens: 256,
+                                max_tokens: COMPLETION_MAX_TOKENS,
                                 messages: [
                                     {
                                         role: 'system',
@@ -113,7 +118,7 @@ export class LegacyJsonCompletionExecutor implements AiTaskExecutor {
                             timeoutId = setTimeout(() => {
                                 reject(new Error('JSON completion timeout'));
                                 attemptAbort.abort('timeout');
-                            }, 60_000);
+                            }, COMPLETION_TIMEOUT_MS);
                         }),
                     ]).finally(() => clearTimeout(timeoutId));
                     const text = response.choices[0]?.message?.content?.trim() ?? '';

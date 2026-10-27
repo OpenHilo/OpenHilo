@@ -211,7 +211,8 @@ test('runtime retains run ownership through process-group escalation', {timeout:
     const controller = new AbortController();
     fs.writeFileSync(entryFile, JSON.stringify({version: 2, entry: 'code', nodes: {
         code: {id: 'code', type: 'call', executor: 'code',
-            script: 'trap "touch terminated; exit 0" TERM; touch ready; while :; do sleep .01; done',
+            // The TERM-ignoring descendant keeps the group alive until SIGKILL.
+            script: '(trap "" TERM; while :; do sleep .01; done) >/dev/null 2>&1 & trap "touch terminated; exit 0" TERM; touch ready; while :; do sleep .01; done',
             outputs: {}, inputsFrom: {}, outputsTo: {}, next: 'END'}
     }}));
     let runDir, settled = false;

@@ -158,6 +158,19 @@ test('ignores cross-thread requests without invoking host tools', async t => {
     assert.equal(r.outputs.answer, 'rejected');
     assert.equal(calls, 0);
 });
+test('malformed question options are reported to the model instead of failing the attempt', async t => {
+    const s = setup(t, 'bad-options');
+    const result = await (await s.executor.start(s.request, s.host)).result;
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.match(result.outputs.answer, /^rejected: .*string labels/);
+    assert.equal(s.events.some(e => e.type === 'question'), false);
+});
+test('a turn completion that precedes the turn identity is buffered, not dropped', async t => {
+    const s = setup(t, 'early-completion', {}, {timeoutMs: 2000});
+    const result = await (await s.executor.start(s.request, s.host)).result;
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.equal(result.outputs.answer, 'early');
+});
 test('timeout interrupts a stalled initialization promptly', async t => {
     const s = setup(t, 'ok', {}, {cliPath: path.join(__dirname, 'fixtures/hang.cjs'), timeoutMs: 80});
     const before = Date.now();
