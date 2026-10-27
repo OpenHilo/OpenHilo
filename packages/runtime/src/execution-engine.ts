@@ -258,7 +258,12 @@ export class ExecutionEngine {
 
             const nodeId = currentFrame.currentNode;
             const node = currentFrame.nodes[nodeId];
-            if (!node) throw new AbortError(`Node not found: ${nodeId}`);
+            if (!node) {
+                const reason = `Node not found: ${nodeId}`;
+                this.emit({event: 'run_abort', ts: now(), node_run_id: null, reason});
+                this.cfg.runManager.update_status('aborted');
+                throw new AbortError(reason);
+            }
 
             const nodeRunId = this.generateNodeRunId();
             const scope = currentFrame.scope;
@@ -902,13 +907,8 @@ export class ExecutionEngine {
     }
 
     private restorePendingCall(cf: CheckpointFrame, copy: <T>(value: T) => T): Frame['pendingCall'] {
-        const pending = cf.pending_call as unknown;
-        if (pending === null || typeof pending !== 'object' || Array.isArray(pending)) throw new AbortError('Invalid checkpoint pending call');
-        const {node_id: nodeId, inputs} = pending as Record<string, unknown>;
-        if (typeof nodeId !== 'string' || inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))
-            throw new AbortError('Invalid checkpoint pending call');
-        assertWorkflowValue(inputs);
-        return {nodeId, inputs: copy(inputs as Record<string, Value>)};
+        const {nodeId, inputs} = checkpointPendingCall(cf.pending_call);
+        return {nodeId, inputs: copy(inputs)};
     }
 
     /** An on_failure handler whose normal flow reaches a loop's exit path runs outside that loop. */
@@ -1078,6 +1078,58 @@ export class ExecutionEngine {
 
 function now(): number {
     return Math.floor(Date.now() / 1000);
+}
+
+function checkpointPendingCall(pending: unknown): { nodeId: string; inputs: Record<string, Value> } {
+    if (pending === null || typeof pending !== 'object' || Array.isArray(pending)) throw new AbortError('Invalid checkpoint pending call');
+    const {node_id: nodeId, inputs} = pending as Record<string, unknown>;
+    if (typeof nodeId !== 'string' || inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))
+        throw new AbortError('Invalid checkpoint pending call');
+    assertWorkflowValue(inputs);
+    return {nodeId, inputs: inputs as Record<string, Value>};
+}
+
+export interface CheckpointValidationOpts {
+    snapshotDir: string;
+    callStack: CheckpointFrame[];
+    extensions?: readonly RuntimeExtensionPolicy[];
+    allowLegacyExtensionRestore?: boolean;
+}
+
+/**
+ * Read-only check that a saved call stack can be restored against its run snapshot and the
+ * supplied extension policies. Writes no events or status, so a rejected resume keeps its checkpoint.
+ */
+export function validateCheckpoint(opts: CheckpointValidationOpts): void {
+    const {callStack} = opts;
+    if (!Array.isArray(callStack) || !callStack.length) throw new AbortError('Invalid checkpoint call stack: no frames');
+    const registry = new RuntimeExtensions(opts.extensions);
+    let parent: { itt: CFGITT; extensions: ExtensionState[] } | undefined;
+    for (const frame of callStack) {
+        if (frame === null || typeof frame !== 'object' || typeof frame.intent_name !== 'string' || typeof frame.current_node !== 'string')
+            throw new AbortError('Invalid checkpoint frame');
+        const itt = readSnapshot(opts.snapshotDir, frame.intent_name);
+        if (frame.current_node !== 'END' && !Object.hasOwn(itt.nodes, frame.current_node))
+            throw new AbortError(`Checkpoint node "${frame.current_node}" is not in snapshot ${frame.intent_name}`);
+        const context = frame.return_context as unknown;
+        if (parent) {
+            const {parent_call_node_id: callId, outputs_to: outputsTo} = (context ?? {}) as Record<string, unknown>;
+            const call = typeof callId === 'string' && Object.hasOwn(parent.itt.nodes, callId) ? parent.itt.nodes[callId] : undefined;
+            if (call?.type !== 'call' || outputsTo === null || typeof outputsTo !== 'object' || Array.isArray(outputsTo) ||
+                Object.values(outputsTo).some(name => typeof name !== 'string'))
+                throw new AbortError(`Invalid checkpoint return context for ${frame.intent_name}`);
+        } else if (context !== null && context !== undefined) {
+            throw new AbortError('Invalid checkpoint root frame');
+        }
+        if (frame.pending_call !== undefined) checkpointPendingCall(frame.pending_call);
+        let extensions: ExtensionState[];
+        try {
+            extensions = registry.restore(itt, frame.extension_state, parent?.extensions ?? [], opts.allowLegacyExtensionRestore);
+        } catch (error) {
+            throw new AbortError(`Runtime extension error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        parent = {itt, extensions};
+    }
 }
 
 /** Nodes reachable through normal control edges from start, never entering stop. */

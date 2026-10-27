@@ -23,7 +23,9 @@
 
 Console `Records:` paths point to nested `runs/<intent>/<workdir-key>/<run-id>`
 directories. Each has `run.json`, `.snapshot`, `execution.jsonl` and `io_records`;
-review hosts also write `ai-attempts.jsonl`. These may contain task inputs and model
+runs with Human steps add `human-tasks/<task-id>/request.json` and, once answered,
+`submission.json`. `run.lock` exists while a process owns the run. Review hosts also
+write `ai-attempts.jsonl`. These may contain task inputs and model
 outputs. Treat them as your application data, not material to attach publicly
 without review. A missing usage report means unknown, not zero cost.
 

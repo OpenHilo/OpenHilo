@@ -158,11 +158,12 @@ is an error. Conditions record their resulting boolean. Choose an explicit seria
 Validation happens before scope writes and executor input effects, and on executor output and retained state before node
 success. Invalid executor outputs abort without automatic retry. Scope writes retain native references. Scope snapshots
 copy the graph while preserving aliases; the engine shares one copier across all frames. External executor
-inputs/outputs and onEvent payloads are detached ownership boundaries. `resumeRun` validates saved scope values before
-acquiring its lock, changing the run record or constructing executor resources; it cannot reconstruct values already
-lost by older serialization. Legacy tree snapshots remain readable as recorded, without guessing lost aliases. New
-checkpoint and suspended_state records store a `StateGraph` in `call_stack`; `LogEvent` observers still receive decoded
-`CheckpointFrame[]`. JSONL consumers must call `decodeCheckpointStack(event.call_stack)` from the runtime root export
+inputs/outputs and onEvent payloads are detached ownership boundaries. `resumeRun` validates saved scope values, each
+frame's snapshot and current node, nested return contexts, pending call inputs and extension state against the supplied
+policies before acquiring its lock, changing the run record or constructing executor resources. A rejected resume leaves
+the checkpoint available to a corrected caller. It cannot reconstruct values already lost by older serialization.
+Legacy tree snapshots remain readable as recorded, without guessing lost aliases. New checkpoint and suspended_state
+records store a `StateGraph` in `call_stack`; `LogEvent` observers still receive decoded `CheckpointFrame[]`. JSONL consumers must call `decodeCheckpointStack(event.call_stack)` from the runtime root export
 instead of indexing the raw payload. `PersistedLogEvent` in runtime-contracts describes the wire union. Unknown
 versions, invalid references and unsupported graph values fail before resources or effects. Do not downgrade a run with
 new graph checkpoints to an older runtime. This validates the graph/value transport; it is not a general migration or

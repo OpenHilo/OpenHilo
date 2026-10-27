@@ -151,7 +151,7 @@ const result = await startRun({
   populateSnapshot: ({ snapshotDir }) => fs.cpSync(artifactsDir, snapshotDir, { recursive: true }),
   onEvent: event => console.log(event.event),
 });
-// Run this only when result.status is suspended:
+// Later, typically in a new process, when result.status is 'suspended':
 const resumed = await resumeRun({ runDir: result.runDir, createResources });
 ```
 

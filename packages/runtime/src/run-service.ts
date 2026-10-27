@@ -19,7 +19,7 @@ import {
   type RuntimeExtensionPolicy
 } from '@openhilo/runtime-contracts';
 import {RunManager} from './run-manager';
-import {ExecutionEngine, type ExecutorFn, HumanSuspendedError} from './execution-engine';
+import {ExecutionEngine, type ExecutorFn, HumanSuspendedError, validateCheckpoint} from './execution-engine';
 import {EvalEngine} from './eval-engine';
 import {Rehydrator} from './rehydrator';
 import {Logger} from './logger';
@@ -184,6 +184,10 @@ function prepareResume(options: ResumeRunOpts) {
     if (state.kind === 'unsafe_to_replay') throw new Error(`resumeRun: node ${state.nodeRunId} is unsafe to replay; inspect its effects before starting new work`);
     const {callStack, globalSeq, pendingHumanOutput, pendingHumanTask} = state;
     const {pendingHumanSubmission} = state;
+    // A Human answer must never be dropped while a failed step is retried in its place.
+    if (options.humanOutput !== undefined && state.humanNodeRunId === undefined) {
+        throw new HumanOutputError('resumeRun: run is not suspended at a human node; omit humanOutput');
+    }
     // Preflight spans separate reads; another owner may advance between them.
     // Never bind an answer read for one task to a newer checkpoint.
     if (task?.taskId !== pendingHumanTask?.taskId) {
@@ -205,7 +209,12 @@ function prepareResume(options: ResumeRunOpts) {
         if (!node || node.type !== 'call' || node.executor !== 'human') throw new HumanOutputError('Suspended node is not a human operation');
         parseHumanOutputs(submissionToValidate ? submissionToValidate.outputs : pendingHumanOutput, Object.fromEntries(Object.keys(node.outputsTo).map(field => [field, node.outputs?.[field] ?? 'text'])));
     }
-    // Reject lossy saved values before taking a lock, changing status or creating resources.
+    // Reject lossy saved values, edited snapshots and extension mismatches before taking a lock,
+    // changing status or creating resources; the checkpoint remains available for a corrected caller.
+    validateCheckpoint({
+        snapshotDir: path.join(options.runDir, '.snapshot'), callStack,
+        extensions: options.extensions, allowLegacyExtensionRestore: options.allowLegacyExtensionRestore
+    });
     for (const frame of callStack) new ScopeManager().deserialize(frame.scope_stack);
     return {record, submission, callStack, globalSeq, pendingHumanOutput, pendingHumanSubmission, pendingHumanTask, humanNodeRunId: state.humanNodeRunId};
 }

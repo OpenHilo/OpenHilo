@@ -11,6 +11,8 @@ state. They cannot access the engine stack. They are trusted application code, n
 empty context. Every saved extension needs a matching policy/version; adding a policy on resume also requires an
 explicit migration. A pre-extension snapshot is accepted with configured policies only when the caller explicitly
 enables legacy migration. Policies validate their own saved payload and must not silently recalculate it from defaults.
+`resumeRun` also calls `restore` during its read-only preflight, so `restore` must be deterministic and free of side
+effects. A missing or mismatched policy rejects that resume without changing the run.
 
 The optional third executor argument carries `ExecutorContext`. Checkpoint frames record `extension_state`,
 including an empty array for generic execution. The runtime passes these values into task requests as context. The
