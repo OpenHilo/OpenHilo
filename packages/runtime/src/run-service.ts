@@ -251,6 +251,7 @@ export async function resumeRun(options: ResumeRunOpts): Promise<StartRunResult>
 async function execute(options: RunComposition, context: RunContext, manager: RunManager,
                        state: Pick<ConstructorParameters<typeof ExecutionEngine>[0], 'inputs' | 'resumeFrom' | 'pendingHumanOutput' | 'pendingHumanSubmission' | 'pendingHumanTask'>): Promise<StartRunResult> {
     const evalEngine = new EvalEngine();
+    const resumedAtHuman = !!state.pendingHumanTask;
     let resources: RunResources | undefined;
     const result = (status: RunStatus): StartRunResult => ({runDir: context.runDir, runId: context.runId, status});
     try {
@@ -272,7 +273,7 @@ async function execute(options: RunComposition, context: RunContext, manager: Ru
         await engine.run();
         return result('completed');
     } catch (error) {
-        if (error instanceof HumanOutputError && state.pendingHumanTask) {
+        if (error instanceof HumanOutputError && resumedAtHuman) {
             manager.update_status('suspended');
             throw error;
         }
@@ -282,6 +283,8 @@ async function execute(options: RunComposition, context: RunContext, manager: Ru
             return result('aborted');
         }
         if (error instanceof FailableError) {
+            // Non-resumable executors (sys) already recorded run_abort and an aborted status.
+            if (manager.status === 'aborted') return result('aborted');
             manager.update_status('failed');
             return result('failed');
         }

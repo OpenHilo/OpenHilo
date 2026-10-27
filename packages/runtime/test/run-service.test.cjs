@@ -284,22 +284,27 @@ test('input contract drift records its reason before executor resources are crea
 
 test('unexpected execution failure closes resources and is recorded without replay', async t => {
     const f = setup(t, simple);
-    let runDir, effects = 0, closed = 0;
-    await assert.rejects(startRun({
-        ...f.options, onRunCreated(_id, dir) {
-            runDir = dir;
-        }, createResources: () => ({
-            executor: async () => {
-                effects++;
-                throw new Error('Unexpected effect failure');
-            }, close() {
-                closed++;
-            },
-        })
-    }), /Unexpected effect failure/);
+    let effects = 0, closed = 0;
+    const createResources = () => ({
+        executor: async () => {
+            effects++;
+            throw new Error('Unexpected effect failure');
+        }, close() {
+            closed++;
+        },
+    });
+    const result = await startRun({...f.options, createResources});
+    assert.equal(result.status, 'failed');
     assert.equal(effects, 1);
     assert.equal(closed, 1);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'))).status, 'failed');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(result.runDir, 'run.json'))).status, 'failed');
+    const events = fs.readFileSync(path.join(result.runDir, 'execution.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const failed = events.find(event => event.event === 'run_failed');
+    assert.match(failed.reason, /Unexpected effect failure/);
+    assert.equal(failed.failure.safeToReplay, false);
+    assert.equal(events.at(-1).event, 'suspended_state');
+    await assert.rejects(resumeRun({runDir: result.runDir, createResources}), /unsafe to replay/);
+    assert.equal(effects, 1);
 });
 
 test('receipt cannot replace runtime-owned identity or carry live objects', async t => {

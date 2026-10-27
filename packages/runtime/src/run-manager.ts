@@ -1,5 +1,5 @@
 /**
- * RunManager — Shadow 目录生命周期管理（架构 §2.2）
+ * RunManager — Shadow 目录生命周期管理
  *
  * start 时：创建 Shadow 目录结构、写 run.json、写 run.lock
  * resume 时：校验 status、检查 PID 锁、更新 run.lock
@@ -36,6 +36,10 @@ export class RunManager {
         return this.runJson.intent;
     }
 
+    get status(): RunStatus {
+        return this.runJson.status;
+    }
+
     /**
      * start 时：在 runsDir 下创建新的 run 目录，初始化所有文件。
      */
@@ -52,7 +56,14 @@ export class RunManager {
             .slice(0, 8);
         const basename = path.basename(path.resolve(opts.workdir));
         const workdirSegment = `${hash8}-${basename}`;
+        // Namespaced intents ("team/report") are nested directories; nothing may climb out of runsDir.
+        if (typeof opts.intent !== 'string' || /[\\\0]/.test(opts.intent) || path.isAbsolute(opts.intent) ||
+            opts.intent.split('/').some(segment => !segment || segment === '.' || segment === '..')) {
+            throw new Error(`Invalid run intent name: ${JSON.stringify(opts.intent)}`);
+        }
+        const runsRoot = path.resolve(opts.runsDir);
         const runDir = path.join(opts.runsDir, opts.intent, workdirSegment, runId);
+        if (!path.resolve(runDir).startsWith(runsRoot + path.sep)) throw new Error('Run directory escapes runsDir');
 
         // 创建 Shadow 目录结构
         fs.mkdirSync(runDir, {recursive: true});

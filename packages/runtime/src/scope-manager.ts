@@ -1,6 +1,6 @@
 import {adoptWorkflowValue, assertWorkflowValue, createStateCopier, setValueField} from './workflow-value';
 /**
- * ScopeManager — 规范 §12 的 scope_stack 全部操作
+ * ScopeManager — scope_stack 全部操作
  *
  * scope_stack 是一个层栈，每一层是 BaseScope | LoopContextScope | IterationScope。
  * 读取：从最内层向外搜索；写入：更新已存在的层（任意层），否则写入最内层。
@@ -32,7 +32,7 @@ export class ScopeManager {
     // ── 读写 ──────────────────────────────────────────────────────────────────
 
     /**
-     * 从最内层向外搜索变量。未找到 → AbortError（规范 §12.3）。
+     * 从最内层向外搜索变量。未找到 → AbortError。
      */
     read(varName: string): Value {
         for (let i = this.stack.length - 1; i >= 0; i--) {
@@ -45,7 +45,7 @@ export class ScopeManager {
     }
 
     /**
-     * 写入变量（规范 §12.4）：
+     * 写入变量：
      * - ITT_WORKSPACE 已存在时 → AbortError（写保护）
      * - 变量已在某层存在 → 原地更新该层
      * - 变量不存在 → 写入最内层
@@ -95,6 +95,11 @@ export class ScopeManager {
             }
         }
         return null;
+    }
+
+    /** 所有 loop-context scope，外层在前。 */
+    loop_contexts(): LoopContextScope[] {
+        return this.stack.filter((s): s is LoopContextScope => s.kind === 'loop-context');
     }
 
     /**

@@ -1,6 +1,6 @@
 import {decodeCheckpointStack} from './state-graph';
 /**
- * Rehydrator — resume 时从 execution.jsonl 重建 SchedulerContext（架构 §2.5）
+ * Rehydrator — resume 时从 execution.jsonl 重建 SchedulerContext
  *
  * 核心原则：
  *   - 调度器只在主动退出前写 suspended_state 事件（完整帧栈 + global_seq）

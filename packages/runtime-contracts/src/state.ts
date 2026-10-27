@@ -2,7 +2,7 @@ import type {Failure as AiFailure} from '@openhilo/ai-contracts';
 import type {CFGNode, Value} from '@openhilo/itt-contracts';
 
 // ============================================================================
-// Scope 类型（规范 §12，架构 §2.7）
+// Scope 类型
 // ============================================================================
 
 export interface BaseScope {
@@ -32,7 +32,7 @@ export type Scope = BaseScope | LoopContextScope | IterationScope;
 export type ScopeStackSnapshot = Scope[];
 
 // ============================================================================
-// 执行帧与调度器上下文（架构 §3）
+// 执行帧与调度器上下文
 // ============================================================================
 
 /** 单个 ITT 的执行上下文帧 */
@@ -50,7 +50,7 @@ export interface ExecutionFrame {
 }
 
 // ============================================================================
-// 错误类型（架构 §2.6）
+// 错误类型
 // ============================================================================
 
 /**
@@ -83,7 +83,7 @@ export class FailableError extends Error {
 }
 
 // ============================================================================
-// 事件日志类型（架构 §2.10）
+// 事件日志类型
 // ============================================================================
 
 export type RunStatus = 'running' | 'completed' | 'failed' | 'aborted' | 'suspended';
@@ -165,10 +165,12 @@ export interface CheckpointFrame {
     call_node_run_id?: string;
     scope_stack: ScopeStackSnapshot;
     return_context: ExecutionFrame['return_context'];
+    /** Inputs already resolved for current_node; resume reuses them instead of re-evaluating. Absent in legacy snapshots. */
+    pending_call?: { node_id: string; inputs: Record<string, Value> };
 }
 
 // ============================================================================
-// run.json 结构（架构 §2.2）
+// run.json 结构
 // ============================================================================
 
 export interface RunJson {

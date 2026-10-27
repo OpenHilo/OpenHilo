@@ -131,9 +131,9 @@ export async function dispatchAiTask(
                 const realOutput = await fs.realpath(resolved);
                 const realRelative = path.relative(realWorkspace, realOutput);
                 if (realRelative === '..' || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw new Error(`AI output ${key} resolves outside the workspace`);
-                const stat = await fs.stat(resolved);
+                const stat = await fs.stat(realOutput);
                 if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) throw new Error(`AI output ${key} must be ${kind}`);
-                outputs[key] = await makeFileRef(resolved, options.workdir, key);
+                outputs[key] = await makeFileRef(realOutput, realWorkspace, key);
             }
             return {outputs};
         } finally {

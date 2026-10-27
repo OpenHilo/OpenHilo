@@ -7,12 +7,12 @@ import {
     createStateCopier,
     setValueField
 } from './workflow-value';
-import {readSnapshot} from './snapshot';
+import {readSnapshot, snapshotFile} from './snapshot';
 import {parseHumanOutputs} from '@openhilo/itt-contracts/human-output';
 import {type HumanExecutor, type HumanSubmission, type HumanTaskRequest} from '@openhilo/human-contracts';
 import {persistHumanTask, readHumanSubmission, submitHumanTask} from './human-tasks';
 /**
- * ExecutionEngine — CFG 主状态机（架构 §2.6）
+ * ExecutionEngine — CFG 主状态机
  *
  * 单层 while True outer loop，处理：
  *   A 段：END 检查（sub-ITT pop / 顶层完成）
@@ -30,8 +30,6 @@ import {
     type RuntimeExtensionPolicy,
     RuntimeExtensions
 } from '@openhilo/runtime-contracts';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
     AbortError,
     type CFGITT,
@@ -118,6 +116,8 @@ interface Frame {
         topLevelOutputs: Record<string, string>;
     } | null;
     extensions: ExtensionState[];
+    /** Resolved inputs of the in-flight call; checkpointed so resume never re-evaluates them. */
+    pendingCall?: { nodeId: string; inputs: Record<string, Value> };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -132,6 +132,8 @@ export class ExecutionEngine {
     private pendingHumanOutput: Record<string, string> | undefined;
     private pendingHumanSubmission: HumanSubmission | undefined;
     private pendingHumanTask: HumanTaskRequest | undefined;
+    private readonly snapshots = new Map<string, CFGITT>();
+    private readonly handlerLeavesLoop = new Map<string, boolean>();
 
     constructor(cfg: ExecutionEngineOpts) {
         this.cfg = {
@@ -376,6 +378,7 @@ export class ExecutionEngine {
                     default:
                         throw new AbortError(`Unknown node type: ${(node as CFGNode).type}`);
                 }
+                currentFrame.pendingCall = undefined;
 
                 for (const frame of this.callStack) frame.scope.normalizeValues();
 
@@ -438,6 +441,8 @@ export class ExecutionEngine {
                         ...(e.diagnostics ? {diagnostics: e.diagnostics} : {}),
                     });
                     if (onFailure && onFailure !== 'ABORT') {
+                        currentFrame.pendingCall = undefined;
+                        this.unwindLoopsFor(currentFrame, onFailure);
                         currentFrame.currentNode = onFailure;
                         continue;
                     }
@@ -485,6 +490,7 @@ export class ExecutionEngine {
                 scope,
                 returnContext,
                 extensions: this.resolveExtensions(itt, parent, cf),
+                ...(cf.pending_call ? {pendingCall: this.restorePendingCall(cf, copy)} : {}),
             });
         }
     }
@@ -612,7 +618,11 @@ export class ExecutionEngine {
         scope: ScopeManager,
         nodeRunId: string,
     ): Promise<[string, Record<string, Value>]> {
-        const inputs = copyWorkflowValue(await this.resolveInputsFrom(node, scope));
+        const frame = this.callStack.at(-1)!;
+        const inputs = frame.pendingCall?.nodeId === node.id
+            ? frame.pendingCall.inputs
+            : copyWorkflowValue(await this.resolveInputsFrom(node, scope));
+        frame.pendingCall = {nodeId: node.id, inputs};
         this.logger.write_inputs_record(nodeRunId, inputs);
 
         // human executor
@@ -645,7 +655,12 @@ export class ExecutionEngine {
         };
         let result: Awaited<ReturnType<ExecutorFn>>;
         try {
-            result = await executorFn(node, inputs, context);
+            result = await executorFn(node, copyWorkflowValue(inputs), context);
+        } catch (error) {
+            if (error instanceof AbortError || error instanceof FailableError || error instanceof HumanSuspendedError) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            // Effects of an unexpected executor exception are unknown; only an explicit retry may replay it.
+            throw new FailableError(message, {code: 'executor_failed', message, retryable: false, safeToReplay: false});
         } finally {
             acceptingEvents = false;
         }
@@ -851,7 +866,7 @@ export class ExecutionEngine {
             this.emit({event: 'node_success', ts: now(), node_run_id: callNodeRunId, outputs: subOutputs});
             parentFrame.currentNode = callNode.next;
 
-            // checkpoint after call node completes (spec §2.6 pop_call_frame)
+            // checkpoint after call node completes
             if (this.cfg.checkpointsEnabled) {
                 this.emit({
                     event: 'checkpoint', ts: now(),
@@ -866,18 +881,51 @@ export class ExecutionEngine {
     // ── 辅助函数 ──────────────────────────────────────────────────────────────
 
     private loadITT(intentName: string): CFGITT {
-        return readSnapshot(this.cfg.snapshotDir, intentName);
+        let itt = this.snapshots.get(intentName);
+        if (!itt) this.snapshots.set(intentName, itt = readSnapshot(this.cfg.snapshotDir, intentName));
+        return itt;
     }
 
     private isImpl(callee?: string): boolean {
         if (!callee) return false;
-        return fs.existsSync(path.join(this.cfg.snapshotDir, `${callee}.itt.impl.json`));
+        try {
+            return snapshotFile(this.cfg.snapshotDir, callee, '.itt.impl.json') !== undefined;
+        } catch {
+            return false;
+        }
     }
 
     private generateNodeRunId(): string {
-        const hex = (this.globalSeq & 0xffff).toString(16).padStart(4, '0');
+        const hex = this.globalSeq.toString(16).padStart(4, '0');
         this.globalSeq++;
         return `${this.cfg.runId}_${hex}`;
+    }
+
+    private restorePendingCall(cf: CheckpointFrame, copy: <T>(value: T) => T): Frame['pendingCall'] {
+        const pending = cf.pending_call as unknown;
+        if (pending === null || typeof pending !== 'object' || Array.isArray(pending)) throw new AbortError('Invalid checkpoint pending call');
+        const {node_id: nodeId, inputs} = pending as Record<string, unknown>;
+        if (typeof nodeId !== 'string' || inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))
+            throw new AbortError('Invalid checkpoint pending call');
+        assertWorkflowValue(inputs);
+        return {nodeId, inputs: copy(inputs as Record<string, Value>)};
+    }
+
+    /** An on_failure handler whose normal flow reaches a loop's exit path runs outside that loop. */
+    private unwindLoopsFor(frame: Frame, target: string): void {
+        for (const loop of frame.scope.loop_contexts()) {
+            const key = `${frame.intentName}\0${loop.loopNodeId}\0${target}`;
+            let leaves = this.handlerLeavesLoop.get(key);
+            if (leaves === undefined) {
+                const outside = flowFrom(frame.nodes, loop.nextExit, loop.loopNodeId);
+                leaves = [...flowFrom(frame.nodes, target, loop.loopNodeId)].some(id => outside.has(id));
+                this.handlerLeavesLoop.set(key, leaves);
+            }
+            if (leaves) {
+                frame.scope.promote_and_pop_until_including(loop);
+                return;
+            }
+        }
     }
 
     private newFrameId(): string {
@@ -1000,6 +1048,7 @@ export class ExecutionEngine {
             return_context: f.returnContext
                 ? {parent_call_node_id: f.returnContext.parentCallNodeId, outputs_to: f.returnContext.outputsTo}
                 : null,
+            ...(f.pendingCall ? {pending_call: {node_id: f.pendingCall.nodeId, inputs: copy(f.pendingCall.inputs)}} : {}),
         }));
     }
 
@@ -1019,10 +1068,30 @@ export class ExecutionEngine {
 
     private emit(ev: LogEvent): void {
         this.logger.append(ev);
-        if (this.cfg.onEvent) this.cfg.onEvent(createStateCopier()(ev));
+        if (!this.cfg.onEvent) return;
+        try {
+            this.cfg.onEvent(createStateCopier()(ev));
+        } catch { /* Observers cannot change run state. */
+        }
     }
 }
 
 function now(): number {
     return Math.floor(Date.now() / 1000);
+}
+
+/** Nodes reachable through normal control edges from start, never entering stop. */
+function flowFrom(nodes: Record<string, CFGNode>, start: string, stop: string): Set<string> {
+    const seen = new Set<string>();
+    const pending = [start];
+    while (pending.length) {
+        const id = pending.pop()!;
+        if (id === stop || seen.has(id) || !Object.hasOwn(nodes, id)) continue;
+        seen.add(id);
+        const node = nodes[id];
+        if (node.type === 'if') pending.push(node.next_true, node.next_false);
+        else if (node.type === 'for' || node.type === 'foreach') pending.push(node.next_body, node.next_exit);
+        else pending.push(node.next);
+    }
+    return seen;
 }

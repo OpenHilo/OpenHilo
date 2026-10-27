@@ -2,7 +2,7 @@ import {diagnosticJson} from './diagnostic-json';
 import {encodeStateGraph} from './state-graph';
 import {assertWorkflowValue, setValueField} from './workflow-value';
 /**
- * Logger — JSONL 事件追加写 + 引用语义序列化（架构 §2.10）
+ * Logger — JSONL 事件追加写 + 引用语义序列化
  *
  * 引用语义规则：
  *   - boolean / number：始终内联
@@ -12,7 +12,7 @@ import {assertWorkflowValue, setValueField} from './workflow-value';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import {isFileRef, type LogEvent, type PersistedLogEvent, type Value} from './types';
+import {AbortError, isFileRef, type LogEvent, type PersistedLogEvent, type Value} from './types';
 
 const INLINE_THRESHOLD_BYTES = 64 * 1024;  // 64KB
 
@@ -45,7 +45,7 @@ export class Logger {
      */
     write_inputs_record(nodeRunId: string, inputs: Record<string, Value>): void {
         assertWorkflowValue(inputs);
-        const filePath = path.join(this.runDir, 'io_records', `${nodeRunId}_inputs.json`);
+        const filePath = path.join(this.runDir, 'io_records', `${safeFileStem(nodeRunId)}_inputs.json`);
         fs.writeFileSync(filePath, diagnosticJson(inputs, INLINE_THRESHOLD_BYTES).text, 'utf-8');
     }
 
@@ -65,27 +65,16 @@ export class Logger {
         if (event.event === 'continue_inline') {
             ev.step_results = this.serializeValueMap(event.step_results, event.trigger_node_run_id, 'step');
         }
+        const stem = (ev.node_run_id as string | undefined) ?? (ev.frame_id as string | undefined) ?? event.event;
 
         if (ev.inputs && typeof ev.inputs === 'object') {
-            ev.inputs = this.serializeValueMap(
-                ev.inputs as Record<string, Value>,
-                (ev.node_run_id as string) ?? 'unknown',
-                'inputs',
-            );
+            ev.inputs = this.serializeValueMap(ev.inputs as Record<string, Value>, stem, 'inputs');
         }
         if (ev.outputs && typeof ev.outputs === 'object') {
-            ev.outputs = this.serializeValueMap(
-                ev.outputs as Record<string, Value>,
-                (ev.node_run_id as string) ?? 'unknown',
-                'output',
-            );
+            ev.outputs = this.serializeValueMap(ev.outputs as Record<string, Value>, stem, 'output');
         }
         if (ev.vars && typeof ev.vars === 'object') {
-            ev.vars = this.serializeValueMap(
-                ev.vars as Record<string, Value>,
-                'sys',
-                'vars',
-            );
+            ev.vars = this.serializeValueMap(ev.vars as Record<string, Value>, event.event, 'vars');
         }
 
         return ev as unknown as LogEvent;
@@ -145,12 +134,29 @@ export class Logger {
         suffix: string,
         ext: string,
     ): { type: 'file_ref'; path: string; hash: string; mtime: number } {
-        const filename = `${nodeRunId}_${suffix}${ext}`;
-        const relPath = path.join('io_records', filename);
-        const absPath = path.join(this.runDir, relPath);
-        fs.writeFileSync(absPath, content, 'utf-8');
+        const directory = path.resolve(this.runDir, 'io_records');
+        const stem = safeFileStem(`${nodeRunId}_${suffix}`);
         const hash = 'sha256:' + crypto.createHash('sha256').update(content).digest('hex');
-        const mtime = Math.floor(Date.now() / 1000);
-        return {type: 'file_ref', path: relPath, hash, mtime};
+        // Exclusive creation: an earlier file_ref must never be overwritten by a colliding record.
+        for (let attempt = 0; ; attempt++) {
+            const filename = `${stem}${attempt ? `_${attempt}` : ''}${ext}`;
+            const absPath = path.resolve(directory, filename);
+            if (path.dirname(absPath) !== directory) throw new AbortError('io record path escapes io_records');
+            try {
+                fs.writeFileSync(absPath, content, {encoding: 'utf-8', flag: 'wx'});
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+                throw error;
+            }
+            const mtime = Math.floor(Date.now() / 1000);
+            return {type: 'file_ref', path: path.join('io_records', filename), hash, mtime};
+        }
     }
+}
+
+/** Single path component: unsafe characters are escaped injectively; long stems are shortened with a hash. */
+function safeFileStem(stem: string): string {
+    const escaped = stem.replace(/[^A-Za-z0-9_-]/g, c => `%${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    return escaped.length <= 120 ? escaped
+        : `${escaped.slice(0, 80)}~${crypto.createHash('sha256').update(stem).digest('hex').slice(0, 32)}`;
 }

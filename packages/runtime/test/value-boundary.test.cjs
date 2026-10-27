@@ -85,9 +85,10 @@ test('validation does not invoke accessors, toJSON or proxy traps and accepts pl
 test('evaluator rejects non-JSON results before Promise assimilation and detects invalid in-place mutation', async () => {
     const engine = new EvalEngine();
     for (const expression of ['1 / 0', 'NaN', '({ missing: undefined })', '[1,,3]', '(() => 1)',
-        'Promise.resolve(1)', '({ get then() { throw new Error("must not invoke"); } })']) {
+        '({ get then() { throw new Error("must not invoke"); } })']) {
         await assert.rejects(engine.eval(expression, {}), /JSON-compatible/);
     }
+    await assert.rejects(engine.eval('Promise.resolve(1)', {}), /Promise is not defined/);
     await assert.rejects(engine.eval('(items.push(NaN), true)', {items: [1]}), /JSON-compatible/);
     assert.equal(await engine.eval('data?.missing', {data: {}}), undefined);
     assert.deepEqual(JSON.parse(JSON.stringify(await engine.eval('[1,2].map(x => ({n:x+1}))', {}))), [{n: 2}, {n: 3}]);
