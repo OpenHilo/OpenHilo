@@ -108,6 +108,8 @@ export interface CallNode {
     lang?: string;         // code: "bash"（默认）或 "py"
     inputs?: Record<string, { kind: ValueType; shape?: InputShape }>;   // 函数签名：形参声明
     outputs?: Record<string, ValueType>;             // 函数签名：返回值声明
+    /** Optional structural contracts for AI outputs. Absent on legacy snapshots. */
+    outputShapes?: Record<string, InputShape>;
     inputsFrom: Record<string, string>;  // 实参绑定：paramName → localVar
     outputsTo: Record<string, string>;   // 输出捕获：outputField → varName
     /** Optional whole-result capture for internal workflow calls; preserves identity. */

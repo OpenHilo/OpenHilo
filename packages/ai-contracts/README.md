@@ -91,3 +91,21 @@ that do not use this helper must supply equivalent health events to participate.
 ## Type and level routing
 
 The optional `@openhilo/ai-contracts/routing` entry provides `configureAiRouting(routes, factory)`. It resolves `TaskRequest.aiSelection`, delegates to one configured executor and wraps its sessions. It adds no provider dependency or retry policy. See [AI routing](../../docs/ai-routing.md) for the host contract and a runnable example.
+
+### Nested output contracts
+
+`TaskRequest.output` retains the named transport kinds. Optional `outputShapes` refines
+those fields using the serializable `InputShape` data contract from
+`@openhilo/itt-contracts/run-inputs`. Call `validateOutputs(output, value, outputShapes)`
+before reporting completion. Validation preserves values and identifies missing or
+incorrect nested fields (for example, `plan.urls` or `plan.queries[0]`); it never
+coerces values, substitutes defaults, or retries the task.
+
+The compiler emits these shapes for AI declarations with explicit TypeScript return
+types, including nested objects, arrays, optional fields, unions, literals, tuples
+and records. Extra object fields remain compatible with TypeScript structural typing.
+`unknown`/`any` remain unstructured JSON. Existing snapshots without `outputShapes`
+retain kind-only validation; recompile workflow source to opt into nested checks.
+Runtime dispatch checks outputs again even when a custom executor reports success.
+An invalid result is `invalid_output` with `safeToReplay: false`, since validation
+cannot prove that an AI task performed no external effects.

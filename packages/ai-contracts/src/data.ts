@@ -1,3 +1,4 @@
+import type {InputShape} from '@openhilo/itt-contracts/run-inputs';
 import type {AiSelection} from '@openhilo/itt-contracts/ai-selection';
 /** JSON-compatible data. Runtime validation additionally requires finite numbers. */
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
@@ -29,6 +30,8 @@ export interface TaskRequest {
     constraints?: string[];
     inputs: JsonObject;
     output: OutputContract;
+    /** Nested output constraints; absent retains legacy kind-only validation. */
+    outputShapes?: Record<string, InputShape>;
     requiredCapabilities: Capability[];
     context?: ExtensionState[];
     aiSelection?: AiSelection;

@@ -1,3 +1,4 @@
+import {validOutputShapes} from './run-inputs';
 import {parseAiSelection} from './ai-selection';
 /**
  * Validator — ITT 静态验证（架构 §2.4）
@@ -91,6 +92,8 @@ export class Validator {
         nodeIds: Set<string>,
         errors: string[],
     ): void {
+        if (node.outputShapes !== undefined && (node.executor !== 'ai' || !validOutputShapes(node.outputs ?? {}, node.outputShapes)))
+            errors.push(`Call node ${nodeId}: invalid AI output shapes`);
         if (node.executor === 'intent' && !node.callee) {
             errors.push(`Call node "${nodeId}" has executor="intent" but is missing required "callee" field`);
         }

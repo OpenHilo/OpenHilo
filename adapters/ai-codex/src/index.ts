@@ -316,7 +316,7 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                         if (p.turn.status === 'completed') {
                             const envelope = JSON.parse(lastText ?? 'null');
                             if (!record(envelope) || typeof envelope.resultJson !== 'string') fail('invalid_output', 'Codex did not return the structured task result');
-                            const outputs = validateOutputs(task.output, JSON.parse(envelope.resultJson));
+                            const outputs = validateOutputs(task.output, JSON.parse(envelope.resultJson), task.outputShapes);
                             settled = true;
                             resolve({
                                 status: 'completed',
@@ -411,6 +411,7 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                     'You execute an OpenHilo task supplied as JSON in the user message. Follow this mandatory response transport contract.',
                     'Return exactly one JSON object with a resultJson string containing the JSON-encoded task output object.',
                     `The declared output keys and their types are: ${JSON.stringify(task.output)}. Include every declared key with its declared type.`,
+                    'When outputShapes is supplied, match every nested field and item type exactly; optional fields may be omitted. Do not rename fields or substitute objects for strings.',
                     'Never unwrap a single output, including a json output: its value must remain nested under its declared output key inside resultJson.',
                     'This transport contract takes precedence over any role instructions or examples requesting raw JSON or a different response format.',
                     'Use openhilo_ask_user for clarification. Do not claim completion until the work is done.',
@@ -455,6 +456,7 @@ export class CodexTaskExecutor implements AiTaskExecutor {
                             inputs: task.inputs,
                             context: task.context,
                             output: task.output,
+                            ...(task.outputShapes ? {outputShapes: task.outputShapes} : {}),
                             budget: task.budget,
                             responseFormat: 'Return an object with resultJson, a string containing the JSON-encoded output object. Include every declared output with its declared type. Use openhilo_ask_user for clarification. Do not claim completion until the work is done.',
                         })

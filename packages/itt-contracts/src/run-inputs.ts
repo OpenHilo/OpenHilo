@@ -14,6 +14,54 @@ export type InputShape =
 export type RunInputDefinition = { kind: ValueType; shape?: InputShape };
 export type RunInputSchema = Record<string, RunInputDefinition>;
 
+/** Validate serialized shape metadata before evaluating untrusted output data. */
+export function isInputShape(value: unknown): value is InputShape {
+    const ancestors = new Set<object>();
+    const record = (item: unknown): item is Record<string, unknown> => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+        const proto = Object.getPrototypeOf(item);
+        return (proto === Object.prototype || proto === null) && Reflect.ownKeys(item).every(key => {
+            const descriptor = Object.getOwnPropertyDescriptor(item, key)!;
+            return typeof key === 'string' && descriptor.enumerable && 'value' in descriptor;
+        });
+    };
+    const visit = (item: unknown, depth: number): boolean => {
+        if (depth > 100 || !record(item) || !Object.hasOwn(item, 'type') || ancestors.has(item)) return false;
+        ancestors.add(item);
+        try {
+            const allowed = (...keys: string[]) => Object.keys(item).every(key => ['type', ...keys].includes(key));
+            const optionalBoolean = (obj: Record<string, unknown>, key: string) => !Object.hasOwn(obj,key) || typeof obj[key] === 'boolean';
+            const property = (prop: unknown, tuple = false): boolean => record(prop) &&
+                Object.keys(prop).every(key => ['shape','optional', ...(tuple ? ['rest'] : [])].includes(key)) &&
+                optionalBoolean(prop,'optional') && (!tuple || optionalBoolean(prop,'rest')) && visit(prop.shape, depth + 1);
+            switch (item.type) {
+                case 'text': case 'number': case 'boolean': case 'json': case 'file': case 'dir': case 'null': return allowed();
+                case 'literal': return allowed('value') && (item.value === null || ['string','boolean'].includes(typeof item.value) || (typeof item.value === 'number' && Number.isFinite(item.value)));
+                case 'array': return allowed('items') && visit(item.items,depth + 1);
+                case 'union': return allowed('options') && Array.isArray(item.options) && item.options.length > 0 && Array.from(item.options).every(option => visit(option,depth + 1));
+                case 'tuple': return allowed('items') && Array.isArray(item.items) && Array.from(item.items).every(part => property(part,true));
+                case 'object': return allowed('properties','additional','numericAdditional','numericKeys') && record(item.properties) && Object.values(item.properties).every(prop => property(prop)) && optionalBoolean(item,'numericKeys') &&
+                    ['additional','numericAdditional'].every(key => !Object.hasOwn(item,key) || visit(item[key],depth + 1));
+                default: return false;
+            }
+        } finally { ancestors.delete(item); }
+    };
+    try { return visit(value,0); } catch { return false; }
+}
+
+/** Shapes may refine declared fields only; they never introduce or remove output names. */
+export function validOutputShapes(outputs: Record<string, unknown>, shapes: unknown): shapes is Record<string, InputShape> {
+    if (!shapes || typeof shapes !== 'object' || Array.isArray(shapes)) return false;
+    try {
+        const prototype = Object.getPrototypeOf(shapes);
+        if (prototype !== Object.prototype && prototype !== null) return false;
+        return Reflect.ownKeys(shapes).every(key => {
+            const descriptor = Object.getOwnPropertyDescriptor(shapes, key)!;
+            return typeof key === 'string' && Object.hasOwn(outputs,key) && descriptor.enumerable && 'value' in descriptor && isInputShape(descriptor.value);
+        });
+    } catch { return false; }
+}
+
 /** Validate without coercing, dropping fields or inventing values. Errors identify the nested field. */
 export function validateInputShape(value: unknown, shape: InputShape, field = 'input'): void {
     const fail = (expected: string): never => { throw new RunInputError(`${field}: ${expected}`, field); };

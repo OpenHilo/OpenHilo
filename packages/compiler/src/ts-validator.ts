@@ -1,3 +1,4 @@
+import type {InputShape} from '@openhilo/itt-contracts/run-inputs';
 import type {AiSelection} from '@openhilo/itt-contracts/ai-selection';
 import {readAiSelections} from './ai-selection-tags';
 import {expressionConsumer} from './expression-policy';
@@ -14,7 +15,7 @@ export interface CallDeclaration {
     prefixCount: number;
     prefixParams: AIPrefixParams | HumanPrefixParams | CodePrefixParams;
     inputs: { name: string; kind: ValueType }[];
-    outputs: { name: string; kind: ValueType }[];
+    outputs: { name: string; kind: ValueType; shape?: InputShape }[];
     aiSelection?: AiSelection;
     skills?: string[];  // ai only: default value from last skills param
 }
@@ -338,7 +339,7 @@ function tryExtractDeclaration(
         const businessParams = hasSkillsParam ? allBusinessParams.slice(0, -1) : allBusinessParams;
         const inputs = mapInputs(businessParams);
 
-        const outputs = outputFields(node.type);
+        const outputs = outputFields(node.type, true);
         return {
             fnName, executor: 'ai', callee, prefixCount,
             prefixParams: {role: '', prompt: ''} as AIPrefixParams,

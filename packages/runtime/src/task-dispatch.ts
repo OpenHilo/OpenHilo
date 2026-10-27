@@ -53,6 +53,7 @@ export async function dispatchAiTask(
         const constraints = [...(node.constraints ?? []), ...(options.aiTaskInstructions ?? [])];
         const request: TaskRequest = {
             version: 1, taskId: randomUUID(), instruction: node.intent ?? node.callee ?? 'Execute the task',
+            ...(node.outputShapes !== undefined ? {outputShapes: node.outputShapes} : {}),
             inputs, output: node.outputs ?? {}, requiredCapabilities: ['structured_output', 'workspace'],
             ...(context?.length ? {context: JSON.parse(JSON.stringify(context)) as ExtensionState[]} : {}),
             ...(node.role ? {role: node.role} : {}),
@@ -120,7 +121,7 @@ export async function dispatchAiTask(
                 cancellationError = new AbortError(`AI task cancelled: ${result.reason}`);
                 throw cancellationError;
             }
-            const outputs: Record<string, Value> = validateOutputs(request.output, result.outputs);
+            const outputs: Record<string, Value> = validateOutputs(request.output, result.outputs, request.outputShapes);
             for (const [key, kind] of Object.entries(request.output)) {
                 if (kind !== 'file' && kind !== 'dir') continue;
                 const resolved = path.resolve(options.workdir, outputs[key] as string);

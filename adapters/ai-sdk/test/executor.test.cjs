@@ -488,3 +488,12 @@ for (const provider of ['openai', 'anthropic']) {
         assert.equal(h.calls(), 1);
     });
 }
+
+for (const provider of ['openai','anthropic']) test(`${provider}: nested output shape is sent to the model and enforced without retry`,async()=>{
+  const outputShapes={plan:{type:'object',properties:{urls:{shape:{type:'array',items:{type:'text'}}}}}};
+  const h=harness(provider,[finish({plan:{urls:[42]}})]);
+  const result=await(await h.executor.start(request({output:{plan:'json'},outputShapes}),host())).result;
+  assert.equal(result.status,'failed');assert.equal(result.error.code,'invalid_output');
+  assert.match(result.error.message,/plan.urls\[0\]/);assert.equal(h.calls(),1);
+  assert.ok(JSON.stringify(h.bodies).includes('outputShapes'));
+});

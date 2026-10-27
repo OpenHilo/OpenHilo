@@ -440,3 +440,11 @@ test('command stdout supports delta and completion-only providers without duplic
  assert.equal((await (await s.executor.start(s.request,s.host)).result).status,'completed');
  assert.equal(s.events.filter(e=>e.type==='progress').map(e=>e.message).join(''),'AGGREGATED\nSTREAMED\n');
 });
+
+test('Codex validates nested output before reporting success and does not retry invalid data',async t=>{
+  const s=setup(t,'ok',{output:{data:'json'},outputShapes:{data:{type:'object',properties:{nested:{shape:{type:'array',items:{type:'number'}}}}}}});
+  const result=await(await s.executor.start(s.request,s.host)).result;
+  assert.equal(result.status,'failed');assert.equal(result.error.code,'invalid_output');
+  assert.match(result.error.message,/data.nested\[1\]/);assert.equal(result.error.safeToReplay,false);
+  assert.equal(s.events.filter(e=>e.type==='terminal').length,1);
+});

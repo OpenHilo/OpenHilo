@@ -2,7 +2,7 @@ import {readdirSync, readFileSync} from 'node:fs';
 import {isAbsolute, join, relative, resolve} from 'node:path';
 import ts = require('typescript');
 
-test('distributed source imports use only local modules, selection contracts and Node builtins', () => {
+test('distributed source imports use only local modules, selection/data contracts and Node builtins', () => {
     const root = resolve(__dirname, '..');
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     expect(Object.keys(manifest.dependencies ?? {})).toEqual(['@openhilo/itt-contracts']);
@@ -24,7 +24,7 @@ test('distributed source imports use only local modules, selection contracts and
             if (specifier) {
                 expect(ts.isStringLiteral(specifier)).toBe(true);
                 const value = (specifier as ts.StringLiteral).text;
-                if (value === '@openhilo/itt-contracts/ai-selection' || value === 'node:crypto') return;
+                if (['@openhilo/itt-contracts/ai-selection', '@openhilo/itt-contracts/run-inputs'].includes(value) || value === 'node:crypto') return;
                 expect(value.startsWith('.')).toBe(true);
                 const path = relative(join(root, 'src'), resolve(file, '..', value));
                 expect(path.startsWith('..') || isAbsolute(path)).toBe(false);

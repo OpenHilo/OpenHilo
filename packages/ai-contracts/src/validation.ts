@@ -1,3 +1,4 @@
+import {type InputShape, validOutputShapes, validateInputShape, RunInputError} from '@openhilo/itt-contracts/run-inputs';
 import {parseAiSelection} from '@openhilo/itt-contracts/ai-selection';
 import type {Capability, Failure, JsonObject, JsonValue, OutputContract, TaskRequest, ValueKind} from './data';
 import type {ExecutionHost} from './execution';
@@ -59,12 +60,13 @@ function validOutputContract(contract: unknown): contract is OutputContract {
     return object(contract) && Object.entries(contract).every(([key, kind]) => nonempty(key) && kinds.includes(kind as ValueKind));
 }
 
-/** Checks shallow declared kinds and projects undeclared fields; this is not JSON Schema. */
-export function validateOutputs(contract: OutputContract, value: unknown): JsonObject {
+/** Validate declared kinds and optional nested shapes without coercion or default values. */
+export function validateOutputs(contract: OutputContract, value: unknown, shapes?: Record<string, InputShape>): JsonObject {
     const invalid = (message: string): never => {
         throw new ContractError({code: 'invalid_output', message, retryable: false, safeToReplay: false});
     };
     if (!validOutputContract(contract)) return invalid('Invalid output contract');
+    if (shapes !== undefined && !validOutputShapes(contract, shapes)) return invalid('Invalid output shapes');
     if (!object(value)) return invalid('Outputs must be a JSON object');
     const projected: JsonObject = {};
     for (const [key, kind] of Object.entries(contract)) {
@@ -72,6 +74,10 @@ export function validateOutputs(contract: OutputContract, value: unknown): JsonO
         const item = value[key];
         const valid = kind === 'json' || (kind === 'number' ? typeof item === 'number' : kind === 'boolean' ? typeof item === 'boolean' : typeof item === 'string');
         if (!valid) return invalid(`Output ${key} must be ${kind}`);
+        if (shapes && Object.hasOwn(shapes, key)) {
+            try { validateInputShape(item, shapes[key], key); }
+            catch (error) { if (error instanceof RunInputError) return invalid(`Output ${error.message}`); throw error; }
+        }
         Object.defineProperty(projected, key, {value: item, enumerable: true, writable: true, configurable: true});
     }
     return projected;
@@ -90,6 +96,7 @@ export function assertCanStart(request: TaskRequest, host: ExecutionHost, execut
     if (!object(request)) reject('invalid_request', 'Request must contain only JSON data');
     if (request.version !== 1 || !nonempty(request.taskId) || !nonempty(request.instruction)) reject('invalid_request', 'Invalid request version, taskId or instruction');
     if (!object(request.inputs) || !validOutputContract(request.output)) reject('invalid_request', 'Invalid inputs or output contract');
+    if (request.outputShapes !== undefined && !validOutputShapes(request.output, request.outputShapes)) reject('invalid_request', 'Invalid output shapes');
     if (request.role !== undefined && !nonempty(request.role)) reject('invalid_request', 'Invalid role');
     if (request.profile !== undefined && !nonempty(request.profile)) reject('invalid_request', 'Invalid profile');
     if (request.aiSelection !== undefined) {

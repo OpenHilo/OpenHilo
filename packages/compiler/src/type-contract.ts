@@ -77,7 +77,7 @@ export function typeToValueType(node: ts.TypeNode | undefined): ValueType {
 }
 
 /** Workflow output names must be statically declared; never silently omit members. */
-export function outputFields(node: ts.TypeNode | undefined): { name: string; kind: ValueType }[] {
+export function outputFields(node: ts.TypeNode | undefined, preserveShape = false): { name: string; kind: ValueType; shape?: InputShape }[] {
     if (!node) return [];
     while (ts.isParenthesizedTypeNode(node)) node = node.type;
     if (!ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName) || node.typeName.text !== 'Promise' || node.typeArguments?.length !== 1)
@@ -94,7 +94,7 @@ export function outputFields(node: ts.TypeNode | undefined): { name: string; kin
         const name = member.name.text;
         if (seen.has(name)) return unsupported(member, 'Duplicate output contract field');
         seen.add(name);
-        return {name, kind: typeToValueType(member.type)};
+        return {name, kind: typeToValueType(member.type), ...(preserveShape ? {shape: typeToInputShape(member.type)} : {})};
     });
 }
 

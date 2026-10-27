@@ -768,6 +768,8 @@ function compileCallNode(
 
     // Apply prefix params based on executor type
     if (executor === 'ai') {
+        const shapes = outputs.filter(output => output.shape !== undefined);
+        if (shapes.length) callNode.outputShapes = Object.fromEntries(shapes.map(output => [output.name, output.shape!]));
         if (decl.aiSelection !== undefined) callNode.aiSelection = {...decl.aiSelection};
         if (prefixArgs[0]) callNode.role = extractStringLiteral(prefixArgs[0], sourceFile);
         if (prefixArgs[1]) callNode.intent = extractStringLiteral(prefixArgs[1], sourceFile);

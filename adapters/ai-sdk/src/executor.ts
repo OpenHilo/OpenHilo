@@ -195,7 +195,7 @@ export class SdkTaskExecutor implements AiTaskExecutor {
                         current.seen.add(call.id);
                         const args = clone(call.arguments) as JsonObject;
                         if (call.name === 'finish_task') {
-                            const outputs = validateOutputs(task.output, args);
+                            const outputs = validateOutputs(task.output, args, task.outputShapes);
                             let artifacts;
                             try {
                                 artifacts = workspace ? await workspace.artifacts(outputs, task.output) : [];
