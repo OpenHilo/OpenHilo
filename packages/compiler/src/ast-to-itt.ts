@@ -828,9 +828,8 @@ function compileCallNode(
         }
         callNode.inputsFrom = codeInputsFrom;
 
-        // Strip reserved code-executor output names (stdout/stderr/exit_code) — the
-        // execution engine exposes them implicitly; declaring them in outputs is a
-        // validation error (code-executor-abi §2).
+        // stdout/stderr/exit_code are always produced by the Code executor; declarations
+        // may name them for typed access, but they are not script-assigned outputs.
         const CODE_RESERVED = new Set(['stdout', 'stderr', 'exit_code']);
         for (const key of CODE_RESERVED) delete outputsMap[key];
         if (Object.keys(outputsMap).length > 0) callNode.outputs = outputsMap;

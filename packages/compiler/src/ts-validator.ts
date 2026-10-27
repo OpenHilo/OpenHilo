@@ -242,7 +242,11 @@ export function validateTranslatorTs(source: string, systemMethods: SystemMethod
         if (ts.isVoidExpression(node)) errors.push(`${pos(node)}  void operator not supported`);
         // _by_sys calls: validate method name is in registry
         if (ts.isCallExpression(node)) {
+            if (node.expression.kind === ts.SyntaxKind.ImportKeyword)
+                errors.push(`${pos(node)} dynamic import() is unsupported; use named relative imports or a Code capability`);
             const name = directCallee(node)?.text;
+            if (node.questionDotToken && name && (callableNames.has(name) || /_by_(ai|human|code|sys)$/.test(name)))
+                errors.push(`${pos(node)} optional calls of workflows/executors are unsupported; call them directly`);
             if (node.typeArguments?.length && name && (callableNames.has(name) || name.endsWith('_by_sys')))
                 errors.push(`${pos(node)} generic workflow/executor calls are unsupported; remove type arguments and use concrete contracts`);
             if (name && (callableNames.has(name) || name.endsWith('_by_sys')) && !ts.isAwaitExpression(expressionConsumer(node).parent))

@@ -15,45 +15,60 @@ import {
 
 const expressionGlobals = new Set('Math JSON Array Object String Number Boolean parseInt parseFloat isNaN isFinite undefined NaN Infinity Date RegExp Map Set WeakMap WeakSet Promise Symbol BigInt'.split(' '));
 
+const analyses = new WeakMap<ts.SourceFile, { checker: ts.TypeChecker; used: ReadonlySet<string> }>();
+
+/** File-level binding analysis shared by every function compiled from the same source. */
+function analyze(source: ts.SourceFile): { checker: ts.TypeChecker; used: ReadonlySet<string> } {
+    const cached = analyses.get(source);
+    if (cached) return cached;
+    // A closed, in-memory program: binding does not require lib files, imports or filesystem I/O.
+    const files = new Map([[source.fileName, source]]);
+    const program = ts.createProgram([...files.keys()], {
+        noLib: true,
+        noResolve: true,
+        target: ts.ScriptTarget.ESNext
+    }, {
+        getSourceFile: name => files.get(name),
+        getDefaultLibFileName: () => '', writeFile() {
+        }, getCurrentDirectory: () => '',
+        getDirectories: () => [], fileExists: name => files.has(name),
+        readFile: name => files.get(name)?.text,
+        getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => '\n',
+    });
+    const checker = program.getTypeChecker();
+    // Only lexical correctness, not a claim of complete TypeScript typechecking.
+    const lexicalErrors = new Set([2448, 2451, 2588]);
+    for (const diagnostic of program.getSemanticDiagnostics(source)) {
+        if (lexicalErrors.has(diagnostic.code)) {
+            const {line, character} = source.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+            throw new Error(`${line + 1}:${character + 1} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`);
+        }
+    }
+    const used = new Set<string>();
+    const identifiers = (node: ts.Node): void => {
+        if (ts.isIdentifier(node)) used.add(node.text);
+        ts.forEachChild(node, identifiers);
+    };
+    identifiers(source);
+    for (const reserved of [KEY_GUARD, VALUE_GUARD, RESULT_GUARD]) if (used.has(reserved)) policyError(source, source, `Reserved compiler identifier ${reserved}`);
+    const analysis = {checker, used};
+    analyses.set(source, analysis);
+    return analysis;
+}
+
 /** Resolve source bindings without changing the ITT v2 format or source positions. */
 export class LexicalBindings {
     private readonly checker: ts.TypeChecker;
     private readonly names = new Map<ts.Symbol, string>();
     private readonly locals = new Map<ts.Node, string[]>();
     private readonly declaredNames = new Set<string>();
-    private readonly used = new Set<string>();
+    private readonly used: Set<string>;
     private sequence = 0;
 
     constructor(private readonly source: ts.SourceFile, private readonly root: ts.Node) {
-        // A closed, in-memory program: binding does not require lib files, imports or filesystem I/O.
-        const files = new Map([[source.fileName, source]]);
-        const program = ts.createProgram([...files.keys()], {
-            noLib: true,
-            noResolve: true,
-            target: ts.ScriptTarget.ESNext
-        }, {
-            getSourceFile: name => files.get(name),
-            getDefaultLibFileName: () => '', writeFile() {
-            }, getCurrentDirectory: () => '',
-            getDirectories: () => [], fileExists: name => files.has(name),
-            readFile: name => files.get(name)?.text,
-            getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => '\n',
-        });
-        this.checker = program.getTypeChecker();
-        // Only lexical correctness, not a claim of complete TypeScript typechecking.
-        const lexicalErrors = new Set([2448, 2451, 2588]);
-        for (const diagnostic of program.getSemanticDiagnostics(source)) {
-            if (lexicalErrors.has(diagnostic.code)) {
-                const {line, character} = source.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
-                throw new Error(`${line + 1}:${character + 1} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`);
-            }
-        }
-        const identifiers = (node: ts.Node): void => {
-            if (ts.isIdentifier(node)) this.used.add(node.text);
-            ts.forEachChild(node, identifiers);
-        };
-        identifiers(source);
-        for (const reserved of [KEY_GUARD, VALUE_GUARD, RESULT_GUARD]) if (this.used.has(reserved)) policyError(source, source, `Reserved compiler identifier ${reserved}`);
+        const analysis = analyze(source);
+        this.checker = analysis.checker;
+        this.used = new Set(analysis.used);
         const checkBindingName = (name: ts.Identifier): void => {
             if (VALUE_GLOBALS.has(name.text)) policyError(name, source, `Reserved immutable VM constant '${name.text}' cannot be a workflow binding`);
         };

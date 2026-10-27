@@ -111,6 +111,11 @@ export function validateExpressionSyntax(node: ts.Expression, sf: ts.SourceFile)
             if (member && REFLECTION_KEYS.has(member.key))
                 policyError(current, sf, `Prototype/constructor reflection '${member.key}' is unsupported`);
         }
+        if ((ts.isPropertyAssignment(current) || ts.isShorthandPropertyAssignment(current)) && ts.isObjectLiteralExpression(current.parent)) {
+            const key = ts.isComputedPropertyName(current.name) ? unwrapExpression(current.name.expression) : current.name;
+            if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === '__proto__')
+                policyError(current, sf, "Object literal key '__proto__' is unsupported");
+        }
         if (ts.isBindingElement(current) && ts.isObjectBindingPattern(current.parent)) assertPatternKey(current.propertyName ?? current.name, sf);
         if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken) inspectAssignmentPattern(current.left, sf);
         if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {

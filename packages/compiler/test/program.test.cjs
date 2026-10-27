@@ -299,3 +299,74 @@ test('type imports preserve FilePath and DirPath marker contracts without erasin
  assert.equal(r.artifacts[0].declaration.inputs.workdir.kind,'dir');
  assert.equal(r.artifacts[0].declaration.outputs.report,'file');
 });
+
+test('alias expansion budgets apply per expansion, not to unrelated type syntax across the program', () => {
+ const files = {'main.ts': 'type Data = {a:string};\nexport async function main(d:Data):Promise<{ok:boolean}>{return {ok:true};}'};
+ for (let m = 0; m < 10; m++) {
+  let s = '';
+  for (let i = 0; i < 250; i++) s += `export async function f${i}(a:string,b:number,c:boolean,d:string[]):Promise<{ok:boolean,n:number,s:string}>{return {ok:true,n:1,s:a};}\n`;
+  files[`m${m}.ts`] = s;
+ }
+ const r = compileProgram(input(files));
+ assert.equal(r.ok, true, JSON.stringify(r.diagnostics));
+});
+
+test('exponential alias expansion is still bounded and located at the use site', () => {
+ let text = 'type T0 = {v:string};\n';
+ for (let i = 1; i < 30; i++) text += `type T${i} = {a:T${i-1}; b:T${i-1}};\n`;
+ text += 'export async function main(d:T29):Promise<{ok:boolean}>{return {ok:true};}';
+ const r = compileProgram(input({'main.ts': text}));
+ assert.equal(r.ok, false);
+ assert.match(r.diagnostics[0].message, /complexity|size limit/);
+ assert.equal(r.diagnostics[0].file, 'main.ts');
+ assert.ok(r.diagnostics[0].line >= 1);
+});
+
+test('alias diagnostics carry file and original alias position', () => {
+ const r = compileProgram(input({'main.ts': '\n\ntype Data = ()=>void; export async function main(d:string):Promise<{ok:boolean}>{return {ok:true};}'}));
+ assert.equal(r.ok, false);
+ assert.deepEqual({file: r.diagnostics[0].file, line: r.diagnostics[0].line, column: r.diagnostics[0].column}, {file: 'main.ts', line: 3, column: 13});
+ const missing = compileProgram(input({'main.ts': "\nimport type {A} from './nope';\nexport async function main(d:A):Promise<{ok:boolean}>{return {ok:true};}"}));
+ assert.equal(missing.diagnostics[0].file, 'main.ts');
+ assert.equal(missing.diagnostics[0].line, 2);
+ assert.doesNotMatch(missing.diagnostics[0].message, /^main\.ts:/);
+});
+
+test('values may share names with type aliases, matching TypeScript namespaces', () => {
+ const r = compileProgram(input({'main.ts': `type v = string; type Data = {v:v};
+export async function main(d:Data):Promise<{v:string, ok:boolean}>{const Data = 1; const {v: x} = d; const v = x; return {v, ok: Data === 1};}`}));
+ assert.equal(r.ok, true, JSON.stringify(r.diagnostics));
+ const unbound = compileProgram(input({'main.ts': 'type Data = {v:string}; export async function main(d:Data):Promise<{ok:boolean}>{return {ok: Data === 1};}'}));
+ assert.equal(unbound.ok, false);
+});
+
+test('repeated type imports produce one dependency edge', () => {
+ const r = compileProgram(input({'t.ts': 'export type A={a:string}; export type B={b:string};', 'main.ts': "import type {A} from './t';\nimport type {B} from './t';\nexport async function main(d:A,e:B):Promise<{ok:boolean}>{return {ok:true};}"}));
+ assert.equal(r.ok, true, JSON.stringify(r.diagnostics));
+ assert.deepEqual(r.dependencies, [{from: 'main.ts', to: 't.ts'}]);
+});
+
+test('dynamic import, optional workflow calls and __proto__ object keys are rejected', () => {
+ for (const body of [
+  'const u = "fs"; const x = import(u); return {ok:true};',
+  'const x = import("fs"); return {ok:true};',
+  'const r = await ask_by_human?.("ok?"); return {ok:r.ok};',
+  'const x = {__proto__: {}}; return {ok:true};',
+  'const x = {["__proto__"]: 5}; return {ok:true};',
+  'const x = {"__proto__": 5}; return {ok:true};',
+ ]) {
+  const r = compileProgram(input({'main.ts': `declare function ask_by_human(prompt: string): Promise<{ ok: boolean }>;\nexport async function main():Promise<{ok:boolean}>{${body}}`}));
+  assert.equal(r.ok, false, body);
+  assert.deepEqual(r.artifacts, [], body);
+ }
+});
+
+test('file-level binding analysis is shared, keeping large modules near-linear', () => {
+ let text = '';
+ for (let i = 0; i < 600; i++) text += `export async function f${i}(a:string):Promise<{s:string}>{const x = a; return {s:x};}\n`;
+ const started = Date.now();
+ const r = compileProgram({files: {'main.ts': text}, entries: [{file: 'main.ts', exportName: 'f0'}]});
+ assert.equal(r.ok, true, JSON.stringify(r.diagnostics));
+ assert.equal(r.artifacts.length, 600);
+ assert.ok(Date.now() - started < 8000, `compile took ${Date.now() - started}ms`);
+});

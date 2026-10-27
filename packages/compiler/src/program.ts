@@ -1,4 +1,4 @@
-import { expandModuleTypes } from './module-types';
+import {expandModuleTypes, type ModuleTypeError} from './module-types';
 import {directCallee} from './expression-forms';
 import * as ts from 'typescript';
 import {posix as path} from 'path';
@@ -93,12 +93,13 @@ export function compileProgram(input: ProgramInput): ProgramResult {
         }
         expanded = expandModuleTypes(normalized);
         dependencies.push(...expanded.dependencies);
-    } catch (error) { fail('invalid_source', (error as Error).message); return failed(); }
-    for (const [rawPath, source] of Object.entries(expanded.files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    } catch (error) {
+        const {message, file, line, column} = error as ModuleTypeError;
+        diagnostics.push({code: 'invalid_source', message, ...(file ? {file} : {}), ...(line ? {line, column} : {})});
+        return failed();
+    }
+    for (const [file, source] of Object.entries(expanded.files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
         try {
-            const file = virtualPath(rawPath);
-            if (modules.has(file)) throw new Error('Duplicate normalized source path');
-            if (typeof source !== 'string') throw new Error('Source content must be a string');
             const validation = validateTranslatorTs(source, input.systemMethods);
             if (!validation.ok) {
                 validation.errors.forEach(message => fail('invalid_source', message, file));
@@ -115,7 +116,7 @@ export function compileProgram(input: ProgramInput): ProgramResult {
                 registry: buildFunctionRegistry(source), imports: new Map(), declarations: []
             });
         } catch (error) {
-            fail('invalid_source', (error as Error).message, rawPath);
+            fail('invalid_source', (error as Error).message, file);
         }
     }
     if (diagnostics.length) return failed();
