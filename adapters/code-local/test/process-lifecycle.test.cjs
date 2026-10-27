@@ -7,6 +7,7 @@ const {spawn} = require('node:child_process');
 const {setTimeout: delay} = require('node:timers/promises');
 const {executeCode, executePython, createCodeExecutor} = require('@openhilo/code-local');
 const {AbortError, ExecutionError} = require('@openhilo/runtime-contracts');
+const {processGroupAlive} = require('../dist/process-control');
 
 const posix = process.platform !== 'win32';
 
@@ -28,15 +29,7 @@ async function untilFile(file) {
         await delay(10);
     }
 }
-function groupAlive(pgid) {
-    try {
-        process.kill(-pgid, 0);
-        return true;
-    } catch (error) {
-        if (error.code === 'ESRCH') return false;
-        throw error;
-    }
-}
+const groupAlive = processGroupAlive;
 async function untilGroupGone(pgid) {
     const deadline = Date.now() + 3000;
     while (groupAlive(pgid)) {

@@ -1,5 +1,5 @@
 import {spawn} from 'child_process';
-import {constants} from 'fs';
+import {constants, readdirSync, readFileSync} from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import {StringDecoder} from 'string_decoder';
@@ -8,6 +8,7 @@ import {CodeProcessError, type CodeExecutionOptions, type CodeExecutionResult} f
 import {registerProcess} from './process-registry';
 
 const DEFAULT_BYTES = 10 * 1024 * 1024;
+const KILL_SETTLE_MS = 1000;
 export function normalizeOptions(options: CodeExecutionOptions) {
     const {timeoutMs, signal} = options;
     if (signal !== undefined && !(signal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal');
@@ -31,6 +32,38 @@ export function normalizeOptions(options: CodeExecutionOptions) {
         throw new TypeError('env must be an object with string values');
     }
     return {timeoutMs, maxOutputBytes, maxResultBytes, killGraceMs, signal, env: {...env}};
+}
+
+/**
+ * Whether a process group still has a running member. Exited orphans stay zombies until their
+ * new parent reaps them, and `kill(-pgid, 0)` still succeeds for them on Linux.
+ */
+export function processGroupAlive(pgid: number): boolean {
+    try {
+        process.kill(-pgid, 0);
+    } catch {
+        return false;
+    }
+    if (process.platform !== 'linux') return true;
+    let entries: string[];
+    try {
+        entries = readdirSync('/proc');
+    } catch {
+        return true;
+    }
+    for (const entry of entries) {
+        if (!/^\d+$/.test(entry)) continue;
+        let stat: string;
+        try {
+            stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+        } catch {
+            continue;
+        }
+        // Fields after the parenthesized command: state ppid pgrp ...
+        const [state, , pgrp] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        if (Number(pgrp) === pgid && state !== 'Z' && state !== 'X') return true;
+    }
+    return false;
 }
 
 export function checkCancelled(signal?: AbortSignal): void {
@@ -92,12 +125,7 @@ export async function runProcess(command: string, args: string[], config: {
         const groupAlive = () => {
             if (!child.pid) return false;
             if (!grouped) return child.exitCode === null && child.signalCode === null;
-            try {
-                process.kill(-child.pid, 0);
-                return true;
-            } catch {
-                return false;
-            }
+            return processGroupAlive(child.pid);
         };
         const sendSignal = (signal: NodeJS.Signals) => {
             if (!child.pid) return;
@@ -148,11 +176,20 @@ export async function runProcess(command: string, args: string[], config: {
                     return;
                 }
                 sendSignal('SIGKILL');
-                // A deliberately detached descendant can retain pipes beyond this
-                // process group. Close our ends after escalation to bound the wait.
-                child.stdout.destroy(); child.stderr.destroy();
-                reaped = true;
-                finish();
+                const killedAt = Date.now();
+                const settleAfterKill = () => {
+                    escalation = undefined;
+                    if (groupAlive() && Date.now() - killedAt < KILL_SETTLE_MS) {
+                        escalation = setTimeout(settleAfterKill, 10);
+                        return;
+                    }
+                    // A deliberately detached descendant can retain pipes beyond this
+                    // process group. Close our ends after escalation to bound the wait.
+                    child.stdout.destroy(); child.stderr.destroy();
+                    reaped = true;
+                    finish();
+                };
+                settleAfterKill();
             };
             check();
         };

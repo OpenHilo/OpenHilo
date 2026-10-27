@@ -24,14 +24,21 @@ function setup(t, mode, extraEnv = {}) {
     });
     return {dir, transport, failures};
 }
+// Exited orphans remain zombies until reaped; Linux still accepts kill(-pgid, 0) for them.
 function groupAlive(pgid) {
     try {
         process.kill(-pgid, 0);
-        return true;
     } catch (error) {
         if (error.code === 'ESRCH') return false;
         throw error;
     }
+    if (process.platform !== 'linux') return true;
+    return fs.readdirSync('/proc').filter(entry => /^\d+$/.test(entry)).some(entry => {
+        let stat;
+        try {stat = fs.readFileSync(`/proc/${entry}/stat`, 'utf8');} catch {return false;}
+        const [state, , pgrp] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        return Number(pgrp) === pgid && state !== 'Z' && state !== 'X';
+    });
 }
 async function untilFile(file) {
     const deadline = Date.now() + 5000;
