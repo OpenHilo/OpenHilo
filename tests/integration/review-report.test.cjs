@@ -128,6 +128,14 @@ test('resume provider mismatch fails before changing saved state or creating ano
     assert.match(r.stderr, /provider.*mismatch/i);
     assert.deepEqual(fs.readFileSync(path.join(dir, 'execution.jsonl')), before);
 });
+test('resume from the top-level output directory explains which Records path to use', t => {
+    const f = fixture(t), first = launch(f, '', ['--defer-human']);
+    assert.equal(first.status, 2, first.stdout + first.stderr);
+    const r = continueRun(f.output, '');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /complete printed Records path/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(runDir(first), 'run.json'))).status, 'suspended');
+});
 test('explicit provider and valid input are required before effects', t => {
     const f = fixture(t);
     let r = spawnSync(process.execPath, [run, '--input', f.input, '--output', f.output], {

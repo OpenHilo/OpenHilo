@@ -24,6 +24,21 @@
 - AI SDK workspaces protect `.git` case-insensitively; Codex shutdown always
   escalates and cannot hang on inherited pipes; piped terminal input is no longer
   lost between Human tasks.
+- The model-routing example shows the pending question and AI text at each pause,
+  prints failure reasons and rejects a reused output directory. Resume commands
+  explain when given the top-level output directory instead of the Records path;
+  Codex-only examples no longer suggest an unsupported `--provider offline`.
+- The compiler rejects executor declarations with bodies, an empty Code `lang`,
+  `for...of` over non-arrays and non-finite numeric literals at compile time, and
+  accepts parenthesized or `as`-wrapped literal prefix arguments.
+- Resume validates the checkpoint, its call frames and extension state before
+  locking or creating resources, so a rejected resume leaves the run suspended.
+  `humanOutput` is rejected unless the run is paused at a Human step.
+- Local Code rejects languages other than Bash/Python instead of running them as
+  Bash, and its `trap ... EXIT` handling works with macOS `/bin/bash` 3.2. SDK
+  workspace reads reject hard-linked files; Codex accepts string JSON-RPC ids; the
+  terminal escapes control and bidirectional characters in task text and fails
+  fast when stdin has already ended. CI also runs on macOS.
 
 - Confirmed AI cancellation aborts the workflow after session cleanup and bypasses
   failure branches, including nested calls after Human resume. A cancelled run

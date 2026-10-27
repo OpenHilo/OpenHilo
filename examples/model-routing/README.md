@@ -1,27 +1,35 @@
 # Choose AI configurations by task
 
 Run from the repository root after `npm ci --ignore-scripts --no-audit --no-fund` and `npm run build:packages`.
-Use Node 22 or 24 and an installed, authenticated [Codex CLI](https://github.com/openai/codex).
+Use Node 22 or 24 and an installed, authenticated Codex CLI
+([installation and sign-in](../../docs/quickstart.md#install-and-sign-in-to-codex)).
+There is no offline provider: every AI step uses the configured route.
 
 The workflow first uses the default AI, then asks whether to continue with a coding
 suggestion. It pauses for Human input, exits, and resumes in a new process. There
 are at most two coding calls. No files are modified by the AI in this example.
 
 ```sh
-node examples/model-routing/run.cjs --output ./routing-demo --topic 'A reading list'
+node examples/model-routing/run.cjs --output /tmp/openhilo-routing --topic 'A reading list'
 # Copy runDir from the result; this is a NEW process:
 node examples/model-routing/resume.cjs --run-dir "<complete printed runDir>" --continue true
 # After the next pause, either continue once more or finish:
 node examples/model-routing/resume.cjs --run-dir "<complete printed runDir>" --continue false
 ```
 
-Choose a new output directory for each run. `--continue` is the workflow's business
-answer, not an executor approval. The example deliberately exposes the two-process
-commands; applications can render this boolean as a choice instead.
+Choose a new output directory for each run. At each pause the command prints the
+question and the latest AI text, then the resume command for that run. `--continue`
+is the workflow's business answer, not an executor approval. The example deliberately
+exposes the two-process commands; applications can render this boolean as a choice instead.
 
 Replace the whole quoted placeholder, including its angle brackets, with the
 printed `runDir`. It includes `runs/<intent>/<workdir-key>/<run-id>`; substituting
 only a run ID into `runs/RUN_ID` does not identify the saved run.
+
+Both commands exit 0 when the run pauses for your choice or completes, and 1 for
+invalid arguments, a changed configuration or a failed run; the failure reason is
+printed. A missing or signed-out Codex CLI is only detected when the first AI task
+starts, so that run fails and its output directory remains for inspection.
 
 ## Configuration
 

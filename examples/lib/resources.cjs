@@ -14,13 +14,21 @@ function validateProvider(provider) {
     if (!['codex', 'offline'].includes(provider)) throw new Error('Choose --provider codex or --provider offline explicitly. Offline uses a scripted example, not a model.');
 }
 
-function checkProvider(provider) {
+function checkProvider(provider, {offlineAvailable = true} = {}) {
     validateProvider(provider);
     if (provider === 'offline') return null;
     const result = spawnSync('codex', ['--version'], {encoding: 'utf8', timeout: 5000});
-    if (result.error || result.status !== 0) throw new Error('Codex CLI is unavailable. Install Codex CLI and sign in, or explicitly choose --provider offline.');
+    if (result.error || result.status !== 0) throw new Error(offlineAvailable
+        ? 'Codex CLI is unavailable. Install Codex CLI and sign in, or explicitly choose --provider offline.'
+        : 'Codex CLI is unavailable. Install Codex CLI and sign in; this example has no offline provider.');
     const version = result.stdout.trim();
     return version;
+}
+
+function readRunReceipt(runDir) {
+    const file = path.join(runDir, 'run.json');
+    if (!fs.existsSync(file)) throw new Error(`No run.json in ${runDir}. Pass the complete printed Records path (runs/<intent>/<key>/<run id>), not the top-level output directory.`);
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
 function promptSession(onInterrupt) {
@@ -203,4 +211,4 @@ function createResources(context, {provider, deferHuman = false, aiExecutor: sup
     };
 }
 
-module.exports = {createResources, createAiInteraction, validateProvider, checkProvider};
+module.exports = {createResources, createAiInteraction, validateProvider, checkProvider, readRunReceipt};

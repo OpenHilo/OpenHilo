@@ -87,6 +87,16 @@ test('E1 absent Codex CLI and API keys fail explicitly before creating output', 
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /Codex CLI is unavailable/);
     assert.equal(fs.existsSync(path.join(dir, 'output')), false);
+    for (const [example, args] of [['script-repair', []], ['document-review', ['--input', path.join(root, 'examples/document-review/brief.sample.md')]]]) {
+        const codexOnly = spawnSync(process.execPath, [path.join(root, `examples/${example}/run.cjs`), ...args, '--output', path.join(dir, example)], {
+            env,
+            encoding: 'utf8',
+            timeout: 5000
+        });
+        assert.equal(codexOnly.status, 1, codexOnly.stdout + codexOnly.stderr);
+        assert.match(codexOnly.stderr, /Codex CLI is unavailable.*no offline provider/);
+        assert.equal(fs.existsSync(path.join(dir, example)), false);
+    }
     const sdk = spawnSync(process.execPath, [path.join(root, 'examples/sdk-text/run.cjs'), '--provider', 'openai', '--input', path.join(root, 'examples/sdk-text/input.txt')], {
         env,
         encoding: 'utf8',

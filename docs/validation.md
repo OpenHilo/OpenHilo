@@ -13,16 +13,18 @@ syntax; [compatibility](compatibility.md) defines data and recovery behavior.
 | Ubuntu 24.04 x64 | 22.23.3, 24.21.0 | [GitHub Actions](https://github.com/OpenHilo/OpenHilo/actions/runs/39144308133): builds, types, full offline suite and package consumers on both versions |
 
 The current [CI workflow](https://github.com/OpenHilo/OpenHilo/actions/workflows/ci.yml)
-runs on Linux x64 with Node 22 and 24 for pushes to `main` and for pull requests.
-Check the run for your exact commit. Native Windows has not been verified. The local Code
+runs on Linux x64 with Node 22 and 24, and on macOS with Node 24, for pushes to
+`main` and for pull requests. The macOS job also runs the local Code adapter tests
+with the system `/bin/bash` 3.2. Check the run for your exact commit. Native Windows has not been verified. The local Code
 adapter and report examples require Bash/Python in addition to Node; pure
 compiler, contract and runtime APIs do not require those executables.
 
 ## Run the checks
 
-From the repository root, with Node 22 or 24, npm, Bash and Python 3. The root
-`.npmrc` sets `engine-strict`, so installation fails on other Node versions, and
-`npm test` warns when run on one:
+From the repository root, with Node 22 or 24, npm, Bash and Python 3. On other
+Node versions `npm ci` prints an `EBADENGINE` warning but still installs, and
+`npm test` warns that results may differ from CI; neither makes that version
+supported. `npm test` rebuilds the packages first:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
@@ -82,8 +84,9 @@ declining to save and EOF. The [review example](../examples/review-report/README
 also offers a scripted offline mode for exit, revision and recovery in another
 process. Completed steps must not replay after a Human checkpoint.
 
-Real Codex CLI 0.160.0 was tested on macOS arm64 with Node 24.21.0 for text
-Human-directed text processing, draft/review/resume, file and reference-directory reading, document creation and revision across Human pauses, and
+Real Codex CLI 0.160.0 was tested on macOS arm64 with Node 24.21.0 for
+Human-directed text processing, draft/review/resume, file and reference-directory
+reading, document creation and revision across Human pauses, and
 Code-test → AI-file-repair → Code-retest. This is a tested version, not a version
 allowlist. Live-model results can vary; time and attempt limits are not token or
 cost caps. Run these examples with your own authorized account and inspect the

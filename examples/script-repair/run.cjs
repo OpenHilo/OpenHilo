@@ -19,7 +19,7 @@ async function runScriptRepair({input = path.join(__dirname, 'sample/calculator.
     if (fs.existsSync(output)) throw new Error('Output already exists; choose a new directory');
     const tests = fs.readFileSync(path.join(__dirname, 'sample/test_calculator.py'));
     const expectedTestHash = createHash('sha256').update(tests).digest('hex');
-    const version = aiExecutor ? 'injected example test adapter' : checkProvider('codex');
+    const version = aiExecutor ? 'injected example test adapter' : checkProvider('codex', {offlineAvailable: false});
     fs.mkdirSync(path.dirname(output), {recursive: true});
     fs.mkdirSync(output);
     const workdir = path.join(output, 'workspace');

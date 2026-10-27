@@ -133,6 +133,7 @@ This example allows three reviews. Deferred input exits with status `2` intentio
 | --- | --- |
 | [Script repair](examples/script-repair/README.md) | Code runs tests → Codex edits files from real failures → Code retests; at most two repairs |
 | [Local report](examples/local-report/README.md) | Python computes a summary → Human decides → Code saves; no AI needed |
+| [Model routing](examples/model-routing/README.md) | Declaration tags route AI tasks by type and level to one configured model each ([guide](docs/ai-routing.md)) |
 | [SDK text](examples/sdk-text/README.md) | Direct OpenAI or Anthropic SDK text processing |
 | [SDK tools](examples/sdk-tools/README.md) | A model uses an explicitly registered tool |
 
@@ -143,8 +144,6 @@ behavior has not been verified. They require separate API credentials.
 
 Use the compiler/runtime in your own host, or use individual executor packages.
 Start with [embedding](docs/embedding.md) and [local package installation](docs/quickstart.md#embed-packages-from-local-tarballs).
-The included AI adapters use Codex CLI or the official OpenAI/Anthropic SDKs.
-There is no bundled Claude Code executor.
 
 ### Packages
 
@@ -193,7 +192,3 @@ The offline test suite runs on Node 22 and 24 in
 
 [Report a bug](https://github.com/OpenHilo/OpenHilo/issues) ·
 [MIT license](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.txt)
-
-### Choose AI by task
-
-Use optional declaration tags to route tasks by type and level, with one direct model configuration per route. Try the [model-routing example](examples/model-routing/README.md) or read the [configuration guide](docs/ai-routing.md).

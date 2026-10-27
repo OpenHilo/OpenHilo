@@ -1,17 +1,15 @@
 #!/usr/bin/env node
-const fs = require('node:fs');
 const path = require('node:path');
 const {parseArgs} = require('node:util');
 const {resumeRun} = require('@openhilo/runtime/run-service');
 const {createRunConsole, createTerminalOutput} = require('../lib/console.cjs');
-const {createResources, validateProvider, checkProvider} = require('../lib/resources.cjs');
+const {createResources, validateProvider, checkProvider, readRunReceipt} = require('../lib/resources.cjs');
 
 async function main(args) {
     const {values} = parseArgs({args, options: {'run-dir': {type: 'string'}, provider: {type: 'string'}}});
     validateProvider(values.provider);
     if (!values['run-dir']) throw new Error('Provide --run-dir from the previous run output');
-    const runDir = path.resolve(values['run-dir']),
-        record = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'));
+    const runDir = path.resolve(values['run-dir']), record = readRunReceipt(runDir);
     if (record.example !== 'review-report' || record.provider !== values.provider) throw new Error('Example/provider mismatch: resume with the provider saved in the run receipt.');
     checkProvider(values.provider);
     createTerminalOutput().log(`Resuming ${record.run_id} from its original snapshot; provider ${values.provider}${values.provider === 'offline' ? ' (scripted)' : ''}.\n`);

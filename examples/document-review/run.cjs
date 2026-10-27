@@ -16,7 +16,7 @@ async function runDocumentReview({input, output, deferHuman = false, aiExecutor}
     if (!new TextDecoder('utf-8', {fatal: true}).decode(brief).trim()) throw new Error('Brief must not be empty');
     output = path.resolve(output);
     if (fs.existsSync(output)) throw new Error('Output already exists; choose a new directory');
-    const version = aiExecutor ? 'injected example test adapter' : checkProvider('codex');
+    const version = aiExecutor ? 'injected example test adapter' : checkProvider('codex', {offlineAvailable: false});
     fs.mkdirSync(path.dirname(output), {recursive: true});
     fs.mkdirSync(output); // atomically claim a new output directory
     const workdir = path.join(output, 'workspace');

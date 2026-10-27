@@ -12,6 +12,7 @@ account. Then choose an example or integration guide below.
 | Draft, review and revise text; pause and resume | [Review report](../examples/review-report/README.md) |
 | Pass files and directories to AI, then inspect and review its output | [Document review](../examples/document-review/README.md) |
 | Test a script, have AI repair it, and test again | [Script repair](../examples/script-repair/README.md) |
+| Route AI tasks by type and level to configured models | [Model routing](../examples/model-routing/README.md) · [AI routing](ai-routing.md) |
 | Call an AI SDK directly for text | [SDK text](../examples/sdk-text/README.md) |
 | Give an SDK task an explicit business tool | [SDK tools](../examples/sdk-tools/README.md) |
 | Check accepted syntax and rejected forms | [Workflow language](../packages/compiler/LANGUAGE.md) · [简体中文](../packages/compiler/LANGUAGE.zh-CN.md) |
