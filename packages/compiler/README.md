@@ -30,7 +30,8 @@ local-name collisions, root escapes, recursive workflow calls, and top-level exe
 produce diagnostics. Failed compilations return no executable artifacts.
 
 Artifact IDs combine the relative module stem and function name: `math/numbers.ts` exporting `sum` becomes
-`math.numbers.sum`. Path segments must be identifier-like names (hyphens allowed, dots excluded); this keeps
+`math.numbers.sum`. Path segments must be identifier-like names starting with a letter or underscore (hyphens allowed,
+dots and spaces excluded); this keeps
 module-to-namespace conversion unambiguous. File names are relative POSIX `.ts` paths. Relative imports may omit `.ts`;
 `index.ts` is supported. Explicit entries must be exported functions. Entry selection and export visibility are
 independent of `@tags` or any application database.
@@ -69,8 +70,9 @@ are installed by this package.
 ## Thin CLI
 
 `openhilo-compile program.json` reads a JSON object with the same `files`, `entries` and optional `systemMethods` as the
-API, and writes one `ProgramResult` JSON object to stdout. Exit status: 0 success, 1 compilation diagnostics, 2
-input/usage failure. It does not install artifacts or execute workflows. `--help` prints usage.
+API, and writes one `ProgramResult` JSON object to stdout. Exit status: 0 success, 1 compilation diagnostics (including
+`invalid_input` for JSON that lacks files or entries), 2 usage errors or an unreadable/non-JSON input file. It does not
+install artifacts or execute workflows. `--help` prints usage.
 
 ```sh
 npm run build --workspace @openhilo/compiler

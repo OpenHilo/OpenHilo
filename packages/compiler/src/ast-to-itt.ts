@@ -634,6 +634,10 @@ function compileForeachStatement(
     const itemVar = ts.isIdentifier(decl.name) ? gen.bindings.name(decl.name) : gen.temporary('__itt_foreach_item');
 
     // Extract array expression
+    const iterable = unwrapExpression(stmt.expression);
+    if (ts.isStringLiteralLike(iterable) || ts.isTemplateExpression(iterable) || ts.isNumericLiteral(iterable) || ts.isObjectLiteralExpression(iterable) ||
+        [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(iterable.kind))
+        policyError(stmt.expression, sourceFile, 'for-of iterates arrays only; use an array value such as text.split("")');
     const arrayExpr = exprText(stmt.expression, sourceFile, gen.bindings);
 
     // Compile body with loop context
@@ -788,7 +792,8 @@ function compileCallNode(
         if (Object.keys(inputsMap).length > 0) callNode.inputs = inputsMap;
     } else if (executor === 'code') {
         // prefix: lang (arg 0), script (arg 1) — always prefixCount=2
-        if (prefixArgs[0]) callNode.lang = extractStringLiteral(prefixArgs[0], sourceFile) || 'bash';
+        if (prefixArgs[0]) callNode.lang = extractStringLiteral(prefixArgs[0], sourceFile);
+        if (callNode.lang === '') policyError(prefixArgs[0], sourceFile, 'Code lang must be a non-empty string literal');
         if (prefixArgs[1]) callNode.script = extractStringLiteral(prefixArgs[1], sourceFile);
 
         // Build inputsFrom from optional inputs object literal (3rd arg)
@@ -1030,14 +1035,15 @@ function exprText(node: ts.Expression, sf: ts.SourceFile, bindings: LexicalBindi
 }
 
 function extractStringLiteral(node: ts.Expression, sourceFile: ts.SourceFile): string {
-    if (ts.isStringLiteral(node)) return node.text;
-    if (ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+    const value = unwrapExpression(node);
+    if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
     throw new Error(`Executor prefix arguments must be string literals without interpolation; received ${node.getText(sourceFile)}. Pass dynamic values as business inputs after the prefix arguments.`);
 }
 
 function extractArrayLiteral(node: ts.Expression, sourceFile: ts.SourceFile): string[] {
-    if (ts.isArrayLiteralExpression(node)) {
-        return node.elements.map(el => extractStringLiteral(el, sourceFile));
+    const value = unwrapExpression(node);
+    if (ts.isArrayLiteralExpression(value)) {
+        return value.elements.map(el => extractStringLiteral(el, sourceFile));
     }
     throw new Error(`Executor constraints must be an array literal of string literals; received ${node.getText(sourceFile)}. Pass dynamic values as business inputs after the prefix arguments.`);
 }

@@ -23,7 +23,7 @@ readability convention, not an additional restriction on valid function names.
 | Bindings | Explicitly initialized let/const, block scope, inner-scope shadowing | var, access before declaration or outside scope, const reassignment, duplicate declarations; workflow bindings named undefined/NaN/Infinity |
 | Control flow | if/else, blocks, counted for, while, array for-of, break/continue/return, and nesting | switch, do-while, for-in, for-await, try/catch/finally, throw, labeled jumps, debugger |
 | Updates | Variable/property/index assignment, compound/logical assignment, prefix/postfix increments in standalone statements or counted-for initialization/update | Assignment/increment of outer workflow bindings embedded in conditions, arguments, right-hand expressions or callbacks; optional-chain assignment |
-| Ordinary expressions | Supported-data literals, arithmetic/comparison/logical/conditional operators, typeof, template strings, property/index access, optional chains, array/object spread, listed built-ins | delete, void, instanceof, this/super/globalThis, tagged templates, classes, unknown globals, prototype reflection |
+| Ordinary expressions | Supported-data literals, arithmetic/bitwise/comparison/`in`/logical/conditional/comma operators, typeof, template strings, property/index access, optional chains, array/object spread, listed built-ins | delete, void, instanceof, this/super/globalThis, tagged templates, classes, unknown globals, prototype reflection |
 | Destructuring | Declarations, reassignment of existing variables, declaration heads of array for-of; static keys, renaming, defaults, nesting, skipped elements, rest | Computed keys, member write targets, await in defaults, non-declaration for-of heads, parenthesized assignment targets |
 | Calls | Direct await of known workflows/executors, named relative imports, acyclic calls across files | Recursion, dynamic function/method aliases, workflow functions as values, arbitrary Promises, concurrency, async callbacks, generators |
 | Function interfaces | Named required parameters, explicitly named output objects, ordinary return expressions | Default/optional/rest/destructured/this parameters; opaque or optional output fields |
@@ -43,9 +43,13 @@ entry points; it does not read source files from disk. A file may contain multip
 exported or private async workflows. `import {child as runChild} from './child'`
 resolves by export identity. Top-level executable steps, missing/private imports,
 paths outside the source graph, duplicate names and call cycles are rejected.
-Only named exports/imports are supported; default exports, mixed default imports
-and import attributes are rejected. Workflow and executor declarations must be at
-module scope; nested workflow functions are unsupported. Workflows, executors,
+Only named exports/imports are supported: export workflows with
+`export async function` (type aliases with `export type`). Default exports, export
+lists such as `export {child}`, re-exports, namespace/side-effect/default imports
+and import attributes are rejected. Imports resolve workflows only: executor
+declarations cannot be imported, so declare them in each file that calls them.
+Workflow and executor declarations must be at module scope; nested workflow
+functions are unsupported. Workflows, executors,
 import aliases and registered system capabilities share one call namespace.
 Duplicate names and overloads are rejected rather than resolved by taking the first.
 
@@ -77,14 +81,21 @@ back to the original target. Internal child-workflow arguments and whole return
 objects preserve their reference relationships.
 
 AI role/prompt, Human prompt and Code lang/script must be static strings or
-interpolation-free templates. Constraints are static string arrays; AI skills
-are declaration metadata. Pass dynamic business data as subsequent business
-arguments. Executors use bodyless `declare function` declarations, with their
-implementations supplied by adapters; executor declarations with bodies are
-rejected. `_by_code` accepts only one optional named-input object literal with
-static identifier keys, not spread, computed keys, methods or extra positional
-arguments. `_by_sys` can call only methods explicitly registered by the host;
-the core supplies no entity-management or scheduling capabilities.
+interpolation-free templates (transparent parentheses and type wrappers allowed).
+Code lang must be non-empty; the Code adapter decides which languages it runs
+(the local adapter accepts bash, py and python). Constraints are static string
+arrays, recognized only when declared as an optional `constraints?: string[]`
+parameter directly after the AI role/prompt or the Human prompt; AI skills are a
+trailing `skills: string[] = [...]` declaration default, not a call argument.
+Pass dynamic business data as subsequent business arguments. Executors use
+bodyless `declare function` declarations whose names end in `_by_ai`, `_by_human`
+or `_by_code`, with their implementations supplied by adapters; executor-suffixed
+functions with bodies, async or not, are rejected. `_by_code` accepts only one
+optional named-input object literal with static identifier keys, not spread,
+computed keys, methods or extra positional arguments; the literal's keys define
+the Code inputs and are not checked against the declared parameter type.
+`_by_sys` can call only methods explicitly registered by the host, without a
+source declaration; the core supplies no entity-management or scheduling capabilities.
 
 ## 3. Updates, destructuring and synchronous expressions
 
@@ -98,9 +109,17 @@ A destructuring right-hand side is evaluated once. Defaults apply only when the
 corresponding value is undefined; rest makes a shallow copy. Persisted bindings
 still cannot contain undefined: use a default or null.
 `for (const {id, name = "anon", ...rest} of rows)` uses the same binding rules.
-Only arrays are iterable here. The original array and cursor are preserved;
+Only arrays are iterable by for-of: literal strings, templates, numbers and
+object literals fail compilation, and other non-arrays fail at runtime; iterate
+`text.split("")` instead. (Array destructuring still follows JS iteration, so
+`const [a, b] = "ab"` works.) The original array and cursor are preserved;
 push/splice affect subsequent iteration as in JS array for-of. Scope exit,
 break/continue and return release unreachable temporary roots.
+
+Each workflow statement and loop iteration is a recorded graph step, so a
+workflow loop over thousands of items is far slower than native JS. Do bulk
+computation inside one expression (for example `rows.map(...)` or `reduce`) or in
+a Code executor.
 
 Optional property access, indexing and calls can be combined:
 `a?.b.c`, `a?.[key].items[0]?.name`, `rows?.slice?.(1).length`.
@@ -113,7 +132,8 @@ Function expressions are limited to synchronous immediately invoked functions
 (IIFEs) or direct synchronous callbacks to these methods:
 map/filter/reduce/reduceRight/find/findIndex/findLast/findLastIndex/some/every/flatMap/sort/toSorted/forEach/from/replace/replaceAll.
 Callback-local variables use native JS semantics, subject to the expression rules.
-Functions cannot be saved/returned or inspected for source text. Async/generator
+A named function-expression callback may call itself directly. Functions cannot be
+saved/returned, declared as callback-local values or inspected for source text. Async/generator
 callbacks and updates to outer workflow variable bindings are unsupported.
 Mutations of shared plain objects remain subject to the data rules. Workflow calls
 cannot appear inside synchronous callbacks.
@@ -134,11 +154,14 @@ the full built-in library.
 | string / string literals and unions within that kind | text |
 | number / numeric literals and unions within that kind | number |
 | boolean / Boolean literals and unions within that kind | boolean |
-| Plain objects, arrays, Array, ReadonlyArray, tuples, Record | json |
+| Plain objects, `object`, `{}`, index signatures, arrays, Array, ReadonlyArray, tuples, Record | json |
 | any, unknown, no annotation, null, mixed unions | json |
 | Standalone FilePath / DirPath | file / dir |
 
-Parentheses and readonly wrappers use the same mapping. Compiled workflow entry
+Parentheses and `readonly` modifiers use the same mapping; utility types such as
+`Readonly<T>` or `Partial<T>` are rejected. `FilePath` and `DirPath` are reserved
+marker names: they map to file/dir whether or not a `type FilePath = string`
+alias is declared, and an alias with that name does not change the mapping. Compiled workflow entry
 inputs additionally retain a `shape` descriptor for fields, optional properties,
 arrays, tuples, literal sets, unions and Record/index values. Hosts using
 `typed-text-v1` validate this shape before execution and can generate field forms.
@@ -161,7 +184,8 @@ the actual object-return rules still apply.
 
 `as`, type assertions, satisfies, non-null assertions and synchronous callback type
 annotations are erased when expressions are emitted. They do not convert values
-or validate structure at runtime. Type syntax requiring additional helper
+or validate structure at runtime, and the types written in these erased positions
+are not checked against the supported data types. Type syntax requiring additional helper
 statements is unsupported. Workflow/executor signatures cannot be generic.
 
 ## 5. Data and recovery
@@ -173,7 +197,11 @@ extra properties, cycles, functions/Promises, Date/Map/Set/RegExp/BigInt,
 accessors/Proxy, symbol/hidden properties, custom/null prototypes,
 frozen/sealed/non-extensible objects and read-only properties. Statically known
 cases fail compilation; dynamic cases fail at runtime rather than losing fields
-or being converted to null.
+or being converted to null. The check applies whenever a binding, field or
+element is written, even if a later statement would overwrite it. Common
+surprises: `Math.round(-0.4)` and `-1 * 0` produce -0, `Number("x")` and `o.n++`
+on a missing field produce NaN, and `text.match(...)` returns an array with extra
+properties; read the needed parts (for example `?.[0] ?? null`) before saving.
 
 `const b = a` shares the object; spread/rest make only shallow copies. StateGraph
 preserves relationships among bindings, loop cursors and return objects across
@@ -222,4 +250,4 @@ and expected versus actual results. Do not attach credentials or private run dat
 
 ## AI selection tags
 
-AI declarations support optional `@ai.type` and `@ai.level` JSDoc tags. They select a configured execution target without changing function arguments. See [AI routing](../../docs/ai-routing.md) for values, defaults and the runnable example.
+AI declarations support optional `@ai.type` and `@ai.level` JSDoc tags. They select a configured execution target without changing role, prompt or business arguments. Without a type tag the `default` type is used; without a level tag that type's `defaultLevel` is used. An explicitly selected route that is not configured is an error, with no automatic fallback. See [AI routing](../../docs/ai-routing.md) for values, defaults and the runnable example.

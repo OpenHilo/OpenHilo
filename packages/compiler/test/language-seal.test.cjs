@@ -53,6 +53,11 @@ const cases = [
     ['type/enum', 'enum X{a};return {value:1};'],
     ['type/namespace', 'namespace X{}return {value:1};'],
     ['declaration/nested workflow', 'async function inner():Promise<{}>{return {};}return {value:1};'],
+    ['data/static non-finite literal', 'const n=1e400;return {value:n};'],
+    ['data/static negative non-finite literal', 'return {value:[-1e400]};'],
+    ['control/for-of string literal', 'for(const c of "ab"){}return {value:1};'],
+    ['control/for-of template literal', 'const s="a";for(const c of `${s}b`){}return {value:1};'],
+    ['control/for-of wrapped object literal', 'for(const c of ({} as any)){}return {value:1};'],
 ];
 for (const [name, body] of cases) test('sealed boundary rejects ' + name, () => {
     const result = compileProgram({files: {'p.ts': child + main(body)}, entries: [{file: 'p.ts', exportName: 'main'}]});
@@ -91,6 +96,8 @@ for (const [name, prefix] of [
     ['human implementation body', 'function ask_by_human(prompt:string):Promise<{value:number}>{const ignored=9;return {value:ignored};}'],
     ['ai implementation body', 'function ask_by_ai(role:string,prompt:string):Promise<{value:number}>{return {value:9};}'],
     ['ambient implementation body', 'declare function ask_by_human(prompt:string):Promise<{value:number}>{return {value:9};}'],
+    ['async human implementation body', 'async function ask_by_human(prompt:string):Promise<{value:number}>{return {value:9};}'],
+    ['exported async code implementation body', 'export async function save_by_code(lang:string,script:string):Promise<{value:number}>{return {value:9};}'],
 ]) test('sealed callable identity rejects ' + name, () => {
     const result = compileProgram({
         files: {'p.ts': prefix + main('return {value:1};'), 'child.ts': child},
@@ -109,6 +116,36 @@ test('registered system capability names cannot be shadowed by a workflow', () =
     assert.equal(result.ok, false);
     assert.deepEqual(result.artifacts, []);
     assert.match(JSON.stringify(result.diagnostics), /duplicate|reserved/i);
+});
+test('debugger diagnostics name the statement', () => {
+    const result = compileProgram({files: {'p.ts': main('debugger;return {value:1};')}, entries: [{file: 'p.ts', exportName: 'main'}]});
+    assert.equal(result.ok, false);
+    assert.match(JSON.stringify(result.diagnostics), /debugger statements are not supported/);
+});
+test('Code lang cannot silently default from an empty literal', () => {
+    const result = compileProgram({
+        files: {'p.ts': 'declare function run_by_code(lang:string,script:string):Promise<{ok:boolean}>;' + main('await run_by_code("","echo");return {value:1};')},
+        entries: [{file: 'p.ts', exportName: 'main'}]
+    });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.artifacts, []);
+    assert.match(JSON.stringify(result.diagnostics), /non-empty/);
+});
+test('executor prefix arguments accept transparent wrappers but stay static', () => {
+    const declaration = 'declare function draft_by_ai(role:string,prompt:string,constraints?:string[]):Promise<{text:string}>;';
+    const result = compileProgram({
+        files: {'p.ts': declaration + main('const r=await draft_by_ai(("writer"),"draft" as string,(["short"] as const));return {value:r.text};')},
+        entries: [{file: 'p.ts', exportName: 'main'}]
+    });
+    assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
+    const call = Object.values(result.artifacts[0].implementation.nodes).find(node => node.type === 'call');
+    assert.deepEqual([call.role, call.intent, call.constraints], ['writer', 'draft', ['short']]);
+    const dynamic = compileProgram({
+        files: {'p.ts': declaration + 'export async function main(t:string):Promise<{value:unknown}>{const r=await draft_by_ai((t),"draft");return {value:r.text};}'},
+        entries: [{file: 'p.ts', exportName: 'main'}]
+    });
+    assert.equal(dynamic.ok, false);
+    assert.match(JSON.stringify(dynamic.diagnostics), /string literals/);
 });
 test('executor signatures require explicit declare rather than implicit overload syntax', () => {
     const result = compileProgram({

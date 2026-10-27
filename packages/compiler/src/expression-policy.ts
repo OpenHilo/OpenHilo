@@ -136,6 +136,8 @@ export function validateExpressionSyntax(node: ts.Expression, sf: ts.SourceFile)
 export function assertStaticState(node: ts.Expression, sf: ts.SourceFile, isGlobal: (node: ts.Identifier) => boolean): void {
     if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) return assertStaticState(node.expression, sf, isGlobal);
     if ((ts.isIdentifier(node) && VALUE_GLOBALS.has(node.text) && isGlobal(node)) || ts.isRegularExpressionLiteral(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node) || node.kind === ts.SyntaxKind.BigIntLiteral ||
+        (ts.isNumericLiteral(node) && !Number.isFinite(Number(node.text))) ||
+        (ts.isPrefixUnaryExpression(node) && [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken].includes(node.operator) && ts.isNumericLiteral(node.operand) && !Number.isFinite(Number(node.operand.text))) ||
         (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand) && Number(node.operand.text) === 0))
         policyError(node, sf, 'Statically unsupported persistent value; store ordinary data and use null/defaults for missing values');
     if (ts.isArrayLiteralExpression(node)) for (const element of node.elements) {

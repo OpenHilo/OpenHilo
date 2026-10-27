@@ -11,6 +11,9 @@ Default executor IDs are `openhilo.codex`, `openhilo.ai-sdk` and
 `openhilo.legacy-json-completion`. Codex registers `openhilo_ask_user` and
 `openhilo_tool_<index>` and initializes with client name `openhilo` and display
 title `OpenHilo`. SDK artifact origin is `openhilo.ai-sdk`.
+[`naming-compatibility.json`](naming-compatibility.json) lists any remaining
+pre-rename identifier exceptions. It is empty: no old runtime identifiers are
+accepted, and the naming test fails on an undocumented old identifier.
 
 ## Session continuation and checkpoint recovery
 

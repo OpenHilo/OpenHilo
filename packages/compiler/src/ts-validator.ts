@@ -105,7 +105,7 @@ export function validateTranslatorTs(source: string, systemMethods: SystemMethod
             if (node.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) errors.push(`${pos(node)} default exports are unsupported; use a named exported workflow`);
             const isAsync = node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
             const isDeclare = node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
-            if (!isAsync && node.body && ['_by_ai', '_by_human', '_by_code', '_by_sys'].some(suffix => node.name?.text.endsWith(suffix)))
+            if (node.body && ['_by_ai', '_by_human', '_by_code', '_by_sys'].some(suffix => node.name?.text.endsWith(suffix)))
                 errors.push(`${pos(node)} executor declaration body is unsupported and cannot be executed; use declare function and implement the executor adapter instead`);
             if (node.asteriskToken) errors.push(`${pos(node)} generator workflow declarations are not supported`);
             const parameterNames = new Set<string>();
@@ -201,8 +201,9 @@ export function validateTranslatorTs(source: string, systemMethods: SystemMethod
             const decl = tryExtractDeclaration(node, fnName, sourceFile, errors);
             if (decl) declarations.push(decl);
         }
-        if (ts.isDoStatement(node) || ts.isForInStatement(node) || ts.isThrowStatement(node) || ts.isLabeledStatement(node) || ts.isDebuggerStatement(node))
+        if (ts.isDoStatement(node) || ts.isForInStatement(node) || ts.isThrowStatement(node) || ts.isLabeledStatement(node))
             errors.push(`${pos(node)} ${ts.SyntaxKind[node.kind]} is not supported`);
+        if (ts.isDebuggerStatement(node)) errors.push(`${pos(node)} debugger statements are not supported`);
         if ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && node.label)
             errors.push(`${pos(node)} labelled loop jumps are not supported`);
         if (ts.isForOfStatement(node) && node.awaitModifier) errors.push(`${pos(node)} for await is not supported`);

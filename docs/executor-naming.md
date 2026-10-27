@@ -49,7 +49,9 @@ external AI that generates workflows can include this instruction alongside the
 
 ## Compatibility
 
-This is an authoring convention, not a compiler restriction. Short names also compile. Parameter order,
+The action + object part is an authoring convention, not a compiler restriction; short names
+such as `ask_by_human` also compile. The suffix is not optional: it selects the executor, and
+a `declare function` without `_by_ai`, `_by_human` or `_by_code` is rejected. Parameter order,
 result fields, routing and the Human submission contract are unchanged: submitting
 valid business outputs continues the workflow; no submission leaves it waiting.
 A business `approved: false` is data for the workflow's own branch.
