@@ -27,7 +27,7 @@ readability convention, not an additional restriction on valid function names.
 | Destructuring | Declarations, reassignment of existing variables, declaration heads of array for-of; static keys, renaming, defaults, nesting, skipped elements, rest | Computed keys, member write targets, await in defaults, non-declaration for-of heads, parenthesized assignment targets |
 | Calls | Direct await of known workflows/executors, named relative imports, acyclic calls across files | Recursion, dynamic function/method aliases, workflow functions as values, arbitrary Promises, concurrency, async callbacks, generators |
 | Function interfaces | Named required parameters, explicitly named output objects, ordinary return expressions | Default/optional/rest/destructured/this parameters; opaque or optional output fields |
-| TS annotations | Data types listed below and erasure of expression-level type syntax | Full type checking, resolution of user-defined interface/type aliases, generic workflows, advanced type operations |
+| TS annotations | Data types listed below and erasure of expression-level type syntax | Full type checking, interfaces, recursive/generic aliases, generic workflows, advanced type operations |
 | Environment | External capabilities through executors | Direct require/npm/filesystem/network/process/timer access in workflow code; unlisted global APIs |
 
 Support includes compositions of allowed constructs in allowed positions, with
@@ -148,8 +148,12 @@ annotations are unstructured JSON. Old artifacts need recompilation to acquire
 shape metadata. Legacy input encoding, internal calls, locals and outputs retain
 the coarse contracts above; this is not full TypeScript type checking. Unknown named, advanced and
 function types are explicitly rejected, including nested annotations and local
-destructuring annotations. Only the FilePath/DirPath marker aliases are accepted;
-user-defined type aliases are not resolved. Outputs require
+destructuring annotations. The compatibility single-file compiler accepts only FilePath/DirPath marker aliases.
+Module compilation also resolves non-generic, non-recursive JSON data aliases,
+including explicit relative `import type { Report } from "./types"`. Aliases may
+compose supported objects, arrays and unions; they do not add runtime values or
+new data types. Interfaces, external type packages and recursive/generic aliases
+are rejected. Expansion is bounded and preserves original source spans. Outputs require
 `Promise<{ explicit required statically named fields }>`; optional fields, index
 signatures and opaque output types are unsupported. For compatibility,
 Promise<void> or an omitted return annotation denotes an empty-output contract;

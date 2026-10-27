@@ -233,3 +233,69 @@ test('code calls reject unsupported inputs instead of silently dropping data', (
         assert.match(compiled.diagnostics.map(d => d.message).join('\n'), /code.*input|code.*argument/i);
     }
 });
+
+test('module JSON aliases expand across type-only imports and preserve source locations', () => {
+ const text = `import type { Report } from './types';
+declare function inspect_by_ai(role: string, prompt: string): Promise<Report>;
+export async function main(): Promise<Report> {
+ const result = await inspect_by_ai('researcher', 'Inspect evidence');
+ return result;
+}`;
+ const result = compileProgram(input({ 'main.ts': text, 'types.ts': 'export type Item = { url: string; valid: boolean }; export type Report = { items: Item[]; status: string };' }));
+ assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
+ const artifact = result.artifacts.find(a => a.exportName === 'main');
+ const call = Object.values(artifact.implementation.nodes).find(n => n.executor === 'ai');
+ assert.equal(call.outputShapes.items.items.properties.url.shape.type, 'text');
+ assert.ok(result.dependencies.some(e => e.from === 'main.ts' && e.to === 'types.ts'));
+ for (const span of Object.values(artifact.sourceMap)) {
+   assert.equal(span.line, text.slice(0, span.start).split('\n').length);
+   assert.ok(span.end <= text.length);
+ }
+ assert.ok(Object.values(artifact.sourceMap).some(span => text.slice(span.start,span.end).includes('await inspect_by_ai')));
+});
+
+test('module alias resolution fails closed on recursive, generic, private and missing definitions', () => {
+ for (const definition of [
+   'export type Report = { children: Report[] };',
+   'export type Report<T> = { value: T };',
+   'type Report = { value: string };',
+ ]) {
+   const r=compileProgram(input({'main.ts':"import type { Report } from './types'; export async function main(): Promise<Report> { return {}; }",'types.ts':definition}));
+   assert.equal(r.ok,false); assert.deepEqual(r.artifacts,[]);
+ }
+ const missing=compileProgram(input({'main.ts':"import type { Report } from './missing'; export async function main(): Promise<Report> { return {}; }"}));
+ assert.equal(missing.ok,false);
+ assert.throws(()=>compileMultiIntent('type Report = { value: string }; export async function main(): Promise<Report> { return {value:"x"}; }'), /type alias|explicit named fields/);
+});
+
+test('alias expansion preserves union precedence inside arrays and permits same-named data properties', () => {
+ const r=compileProgram(input({'main.ts':`type Choice = 'yes' | 'no'; type Payload = { Choice: Choice[] };
+ declare function inspect_by_ai(role:string,prompt:string):Promise<{ payload:Payload }>;
+ export async function main():Promise<{payload:Payload}>{const r=await inspect_by_ai('a','b');return {payload:r.payload};}`}));
+ assert.equal(r.ok,true,JSON.stringify(r.diagnostics));
+ const shape=Object.values(r.artifacts[0].implementation.nodes).find(n=>n.executor==='ai').outputShapes.payload;
+ assert.equal(shape.properties.Choice.shape.type,'array');
+ assert.equal(shape.properties.Choice.shape.items.type,'union');
+});
+test('unused aliases cannot hide unsupported data contracts',()=>{
+ for(const declaration of ['type Bad = ()=>void;', 'type Bad = Missing;', 'type Bad = Date;']) {
+  const r=compileProgram(input({'main.ts':declaration+' export async function main():Promise<{ok:boolean}>{return {ok:true};}'}));
+  assert.equal(r.ok,false,declaration);
+ }
+});
+
+test('module diagnostics refer to original lines after multiline alias removal',()=>{
+ const text='type Data = {\n value: string;\n};\nexport async function main(data:Data = {value:"x"}):Promise<{ok:boolean}>{return {ok:true};}';
+ const r=compileProgram(input({'main.ts':text}));
+ assert.equal(r.ok,false);
+ assert.ok(r.diagnostics.some(d=>d.file==='main.ts' && d.line===4 && /default/.test(d.message)),JSON.stringify(r.diagnostics));
+});
+
+test('type imports preserve FilePath and DirPath marker contracts without erasing them to strings',()=>{
+ const r=compileProgram(input({'types.ts':'export type FilePath = string; export type DirPath = string;', 'main.ts':`import type {FilePath,DirPath} from './types';
+ declare function prepare_by_code(lang:'py',script:string,inputs:{workdir:DirPath}):Promise<{report:FilePath}>;
+ export async function main(workdir:DirPath):Promise<{report:FilePath}>{return await prepare_by_code('py','report = "result.txt"',{workdir});}`}));
+ assert.equal(r.ok,true,JSON.stringify(r.diagnostics));
+ assert.equal(r.artifacts[0].declaration.inputs.workdir.kind,'dir');
+ assert.equal(r.artifacts[0].declaration.outputs.report,'file');
+});

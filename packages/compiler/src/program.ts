@@ -1,3 +1,4 @@
+import { expandModuleTypes } from './module-types';
 import {directCallee} from './expression-forms';
 import * as ts from 'typescript';
 import {posix as path} from 'path';
@@ -59,6 +60,7 @@ function virtualPath(file: string): string {
 
 /** Compile a closed virtual module graph. Failures never return partial executable artifacts. */
 export function compileProgram(input: ProgramInput): ProgramResult {
+    let expanded: ReturnType<typeof expandModuleTypes> | undefined;
     const diagnostics: CompileDiagnostic[] = [];
     const dependencies: ProgramResult['dependencies'] = [];
     const modules = new Map<string, Module>();
@@ -70,10 +72,10 @@ export function compileProgram(input: ProgramInput): ProgramResult {
         } : undefined;
         if (embedded) message = embedded[3];
         diagnostics.push({
-            code, message, ...(file ? {file} : {}), ...(position ? {
+            code, message, ...(file ? {file} : {}), ...(position ? (file && expanded ? expanded.position(file, position.line + 1, position.character + 1) : {
                 line: position.line + 1,
                 column: position.character + 1
-            } : {})
+            }) : {})
         });
     };
     const failed = (): ProgramResult => ({ok: false, artifacts: [], entries: [], dependencies, diagnostics});
@@ -81,20 +83,25 @@ export function compileProgram(input: ProgramInput): ProgramResult {
         fail('invalid_input', 'Provide virtual source files and at least one explicit entry');
         return failed();
     }
-    for (const [rawPath, source] of Object.entries(input.files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    try {
+        const normalized: Record<string, string> = {};
+        for (const [name, source] of Object.entries(input.files)) {
+            const file = virtualPath(name);
+            if (Object.hasOwn(normalized, file)) throw new Error('Duplicate normalized source path');
+            if (typeof source !== 'string') throw new Error('Source content must be a string');
+            normalized[file] = source;
+        }
+        expanded = expandModuleTypes(normalized);
+        dependencies.push(...expanded.dependencies);
+    } catch (error) { fail('invalid_source', (error as Error).message); return failed(); }
+    for (const [rawPath, source] of Object.entries(expanded.files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
         try {
             const file = virtualPath(rawPath);
             if (modules.has(file)) throw new Error('Duplicate normalized source path');
             if (typeof source !== 'string') throw new Error('Source content must be a string');
             const validation = validateTranslatorTs(source, input.systemMethods);
             if (!validation.ok) {
-                validation.errors.forEach(message => {
-                    const position = /^(\d+):(\d+)\s+(.*)$/s.exec(message);
-                    diagnostics.push({
-                        code: 'invalid_source', file, message: position?.[3] ?? message,
-                        ...(position ? {line: Number(position[1]), column: Number(position[2])} : {})
-                    });
-                });
+                validation.errors.forEach(message => fail('invalid_source', message, file));
                 continue;
             }
             const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
@@ -197,7 +204,7 @@ export function compileProgram(input: ProgramInput): ProgramResult {
                     exportName: intent.name,
                     declaration: intent.declaration,
                     implementation: intent.implementation,
-                    sourceMap: intent.sourceMap
+                    sourceMap: expanded.remap(module.file, intent.sourceMap)
                 });
             }
         } catch (error) {
