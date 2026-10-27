@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Module compilation resolves shared non-generic JSON type aliases and relative
+  `import type`. Expansion budgets apply per alias use, diagnostics point at the
+  original source, and values may share names with aliases. Dynamic `import()`,
+  optional workflow calls and `__proto__` object keys are rejected. Large modules
+  no longer re-analyze the whole file for every function.
+- Expressions run in a fresh isolated realm without host intrinsics, string code
+  generation, Promises or dynamic import. Resume reuses checkpointed call inputs
+  instead of re-evaluating them. Plain executor errors use failure routing; event
+  observer errors, long runs and unusual input keys no longer corrupt records.
+  Snapshots are validated before execution.
+- **Behavior change:** Code subprocesses inherit only an allowlisted environment
+  (PATH, HOME, locale and similar); pass credentials explicitly with `env`. Inputs
+  that would override interpreter or loader variables are rejected. Process groups
+  are stopped after completion and on host exit/signals; outputs survive user
+  `trap ... EXIT`/`exec`; symlinked outputs must stay inside the workspace.
+- The ITT validator returns errors for malformed graphs instead of throwing,
+  handles deep graphs, and validates input shapes and loop exits. Legacy numeric
+  inputs reject empty or non-numeric text. Studio descriptors reject unknown keys
+  and plain-HTTP model endpoints outside loopback.
+- AI SDK workspaces protect `.git` case-insensitively; Codex shutdown always
+  escalates and cannot hang on inherited pipes; piped terminal input is no longer
+  lost between Human tasks.
+
 - Confirmed AI cancellation aborts the workflow after session cleanup and bypasses
   failure branches, including nested calls after Human resume. A cancelled run
   cannot fall back to an older Human checkpoint. Provider failures and active-time

@@ -149,7 +149,11 @@ test('real terminal Ctrl+C leaves review waiting and a fresh process resumes wit
     // emulate isTTY or send SIGINT directly to the Node process.
     const driver = String.raw`
 import errno, json, os, pty, select, signal, sys, time
-pid, fd = pty.fork()
+try:
+    pid, fd = pty.fork()
+except OSError as error:
+    print(json.dumps({'unavailable': str(error)}))
+    sys.exit(0)
 if pid == 0:
     os.execv(sys.argv[1], sys.argv[1:])
 transcript = bytearray()
@@ -189,8 +193,10 @@ print(json.dumps({'status': status, 'interrupted': interrupted, 'stdout': transc
         timeout: 15000,
         env: ttyEnv
     });
+    if (result.error?.code === 'ENOENT') return t.skip('python3 is not available to open a pseudo-terminal');
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const first = JSON.parse(result.stdout);
+    if (first.unavailable) return t.skip(`a pseudo-terminal cannot be opened: ${first.unavailable}`);
     assert.match(first.stdout, /\x1b\[2m\[log\]/, 'TTY logs should be dim');
     assert.match(first.stdout, /\x1b\[1mChoose a number: \x1b\[22m/, 'input prompt should stand out');
     first.stdout = first.stdout.replaceAll('\r\n', '\n').replace(/\x1b\[[0-9;]*m/g, '');

@@ -31,7 +31,7 @@
     "THIRD_PARTY_NOTICES.txt"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-assets.cjs",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/copy-assets.cjs",
     "test": "npm run build && node --test test/*.test.cjs"
   },
   "dependencies": {

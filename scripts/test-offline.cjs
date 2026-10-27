@@ -23,6 +23,11 @@ const env = {
     NODE_OPTIONS: `--require=${JSON.stringify(guard)}`,
 };
 
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (nodeMajor !== 22 && nodeMajor !== 24) {
+    console.warn(`Warning: Node ${process.version} is not a supported version (22 or 24); results may differ from CI.`);
+}
+
 function run(args) {
     const result = spawnSync(process.execPath, args, {cwd: root, env, stdio: 'inherit'});
     if (result.error) throw result.error;

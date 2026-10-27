@@ -13,14 +13,16 @@ syntax; [compatibility](compatibility.md) defines data and recovery behavior.
 | Ubuntu 24.04 x64 | 22.23.3, 24.21.0 | [GitHub Actions](https://github.com/OpenHilo/OpenHilo/actions/runs/39144308133): builds, types, full offline suite and package consumers on both versions |
 
 The current [CI workflow](https://github.com/OpenHilo/OpenHilo/actions/workflows/ci.yml)
-runs on Linux x64 with Node 22 and 24 for each push and pull request. Check the
-run for your exact commit. Native Windows has not been verified. The local Code
+runs on Linux x64 with Node 22 and 24 for pushes to `main` and for pull requests.
+Check the run for your exact commit. Native Windows has not been verified. The local Code
 adapter and report examples require Bash/Python in addition to Node; pure
 compiler, contract and runtime APIs do not require those executables.
 
 ## Run the checks
 
-From the repository root, with Node 22 or 24, npm, Bash and Python 3:
+From the repository root, with Node 22 or 24, npm, Bash and Python 3. The root
+`.npmrc` sets `engine-strict`, so installation fails on other Node versions, and
+`npm test` warns when run on one:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
@@ -93,8 +95,8 @@ Passing fixtures does not establish model quality or live provider availability.
 
 ## Dependency maintenance
 
-The resource-control and dependency update was verified locally on macOS arm64,
-Node 24.22.1: 914 Node tests plus 104 Jest tests, all seven archive consumers,
+The resource-control and dependency update was verified locally on macOS arm64
+with Node 24: the full offline suite (Node and Jest tests), all seven archive consumers,
 the coverage instrumentation path, fresh lockfile installation, types, package
 boundaries, twelve archives and fourteen notice artifacts. The environment
 matrix above records earlier baseline runs; this update did not repeat those
@@ -141,8 +143,8 @@ Host cancellation remains an abort; repairable failures require an explicit retr
 of the current failed invocation. Optional tuple positions and large rest tails
 are checked without recursive growth proportional to the input length.
 
-On macOS arm64, Node 22.23.3 and 24.21.0 each passed 940 Node tests and 105 Jest
-tests, with no skipped tests. Node 24 also passed the build, type checks, package
+On macOS arm64, Node 22 and 24 each passed the full offline suite (Node and Jest
+tests), with no skipped tests. Node 24 also passed the build, type checks, package
 boundaries, all twelve package archives, fourteen notice artifacts and all seven
 isolated archive consumers. Consumer installation required registry access;
 the execution tests used offline providers and temporary run data.
